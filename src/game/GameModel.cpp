@@ -33,16 +33,16 @@ GameModel::GameModel():
 	//Load config into renderer
 	try
 	{
-		ren->SetColourMode(Client::Ref().GetPrefNumber("Renderer.ColourMode", 0));
+		ren->SetColourMode(Client::Ref().GetPrefUInteger("Renderer.ColourMode", 0));
 
-		vector<double> tempArray = Client::Ref().GetPrefNumberArray("Renderer.DisplayModes");
+		vector<unsigned int> tempArray = Client::Ref().GetPrefUIntegerArray("Renderer.DisplayModes");
 		if(tempArray.size())
 		{
 			std::vector<unsigned int> displayModes(tempArray.begin(), tempArray.end());
 			ren->SetDisplayMode(displayModes);
 		}
 
-		tempArray = Client::Ref().GetPrefNumberArray("Renderer.RenderModes");
+		tempArray = Client::Ref().GetPrefUIntegerArray("Renderer.RenderModes");
 		if(tempArray.size())
 		{
 			std::vector<unsigned int> renderModes(tempArray.begin(), tempArray.end());
@@ -53,6 +53,9 @@ GameModel::GameModel():
 	{
 
 	}
+
+	//Load config into simulation
+	sim->SetEdgeMode(Client::Ref().GetPrefInteger("Simulation.EdgeMode", 0));
 
 	//Load last user
 	if(Client::Ref().GetAuthUser().ID)
@@ -84,13 +87,15 @@ GameModel::GameModel():
 GameModel::~GameModel()
 {
 	//Save to config:
-	Client::Ref().SetPref("Renderer.ColourMode", (double)ren->GetColourMode());
+	Client::Ref().SetPref("Renderer.ColourMode", ren->GetColourMode());
 
 	std::vector<unsigned int> displayModes = ren->GetDisplayMode();
-	Client::Ref().SetPref("Renderer.DisplayModes", std::vector<double>(displayModes.begin(), displayModes.end()));
+	Client::Ref().SetPref("Renderer.DisplayModes", std::vector<unsigned int>(displayModes.begin(), displayModes.end()));
 
 	std::vector<unsigned int> renderModes = ren->GetRenderMode();
-	Client::Ref().SetPref("Renderer.RenderModes", std::vector<double>(renderModes.begin(), renderModes.end()));
+	Client::Ref().SetPref("Renderer.RenderModes", std::vector<unsigned int>(renderModes.begin(), renderModes.end()));
+
+	Client::Ref().SetPref("Simulation.EdgeMode", sim->edgeMode);
 
 	Client::Ref().SetPref("Decoration.Red", (int)colour.Red);
 	Client::Ref().SetPref("Decoration.Green", (int)colour.Green);
@@ -139,6 +144,7 @@ void GameModel::BuildQuickOptionMenu()
 	quickOptions.push_back(new DecorationsOption(this));
 	quickOptions.push_back(new NGravityOption(this));
 	quickOptions.push_back(new AHeatOption(this));
+	quickOptions.push_back(new DrawGravWallOption(this));
 
 	notifyQuickOptionsChanged();
 	UpdateQuickOptions();
@@ -169,6 +175,10 @@ void GameModel::BuildMenus()
 			if(i == PT_LIGH)
 			{
 				tempTool = new Element_LIGH_Tool(i, sim->elements[i].Name, sim->elements[i].Description, PIXR(sim->elements[i].Colour), PIXG(sim->elements[i].Colour), PIXB(sim->elements[i].Colour), sim->elements[i].IconGenerator);
+			}
+			else if(i == PT_TESC)
+			{
+				tempTool = new Element_TESC_Tool(i, sim->elements[i].Name, sim->elements[i].Description, PIXR(sim->elements[i].Colour), PIXG(sim->elements[i].Colour), PIXB(sim->elements[i].Colour), sim->elements[i].IconGenerator);
 			}
 			else if(i == PT_STKM || i == PT_FIGH || i == PT_STKM2)
 			{

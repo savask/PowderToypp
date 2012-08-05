@@ -77,7 +77,26 @@ void WallTool::Draw(Simulation * sim, Brush * brush, ui::Point position){
 	sim->CreateWalls(position.X, position.Y, 1, 1, toolID, 0, brush);
 }
 void WallTool::DrawLine(Simulation * sim, Brush * brush, ui::Point position1, ui::Point position2, bool dragging) {
-	sim->CreateWallLine(position1.X, position1.Y, position2.X, position2.Y, 1, 1, toolID, 0, brush);
+	int wallX = position1.X/CELL;
+	int wallY = position1.Y/CELL;
+	if(dragging == false && toolID == WL_FAN && sim->bmap[wallY][wallX]==WL_FAN)
+	{
+		float newFanVelX = (position2.X-position1.X)*0.005f;
+		float newFanVelY = (position2.Y-position1.Y)*0.005f;
+		sim->FloodWalls(position1.X, position1.Y, WL_FLOODHELPER, -1, WL_FAN, 0);
+		for (int j = 0; j < YRES/CELL; j++)
+			for (int i = 0; i < XRES/CELL; i++)
+				if (sim->bmap[j][i] == WL_FLOODHELPER)
+				{
+					sim->fvx[j][i] = newFanVelX;
+					sim->fvy[j][i] = newFanVelY;
+					sim->bmap[j][i] = WL_FAN;
+				}
+	}
+	else
+	{
+		sim->CreateWallLine(position1.X, position1.Y, position2.X, position2.Y, 1, 1, toolID, 0, brush);
+	}
 }
 void WallTool::DrawRect(Simulation * sim, Brush * brush, ui::Point position1, ui::Point position2) {
 	sim->CreateWallBox(position1.X, position1.Y, position2.X, position2.Y, toolID, 0);
@@ -155,6 +174,27 @@ void Element_LIGH_Tool::Draw(Simulation * sim, Brush * brush, ui::Point position
 			sim->parts[p].life = 55;
 		sim->parts[p].temp = sim->parts[p].life*150; // temperature of the lighting shows the power of the lighting
 	}
+}
+
+Element_TESC_Tool::Element_TESC_Tool(int id, string name, string description, int r, int g, int b, VideoBuffer * (*textureGen)(int, int, int)):
+	ElementTool(id, name, description, r, g, b, textureGen)
+	{
+	}
+void Element_TESC_Tool::Draw(Simulation * sim, Brush * brush, ui::Point position){
+	int radiusInfo = brush->GetRadius().X*4+brush->GetRadius().Y*4+7;
+	sim->CreateParts(position.X, position.Y, toolID | (radiusInfo << 8), brush);
+}
+void Element_TESC_Tool::DrawLine(Simulation * sim, Brush * brush, ui::Point position1, ui::Point position2, bool dragging) {
+	int radiusInfo = brush->GetRadius().X*4+brush->GetRadius().Y*4+7;
+	sim->CreateLine(position1.X, position1.Y, position2.X, position2.Y, toolID | (radiusInfo << 8), brush);
+}
+void Element_TESC_Tool::DrawRect(Simulation * sim, Brush * brush, ui::Point position1, ui::Point position2) {
+	int radiusInfo = brush->GetRadius().X*4+brush->GetRadius().Y*4+7;
+	sim->CreateBox(position1.X, position1.Y, position2.X, position2.Y, toolID | (radiusInfo << 8), 0);
+}
+void Element_TESC_Tool::DrawFill(Simulation * sim, Brush * brush, ui::Point position) {
+	int radiusInfo = brush->GetRadius().X*4+brush->GetRadius().Y*4+7;
+	sim->FloodParts(position.X, position.Y, toolID | (radiusInfo << 8), -1, -1, 0);
 }
 
 void PlopTool::Click(Simulation * sim, Brush * brush, ui::Point position)

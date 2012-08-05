@@ -114,7 +114,7 @@ int Simulation::Load(int fullX, int fullY, GameSave * save)
 		}
 	}
 
-	grav->gravity_mask();
+	gravWallChanged = true;
 
 	return 0;
 }
@@ -232,6 +232,8 @@ void Simulation::clear_area(int area_x, int area_y, int area_w, int area_h)
 	{
 		for (cx=0; cx<area_w; cx++)
 		{
+			if(bmap[(cy+area_y)/CELL][(cx+area_x)/CELL] == WL_GRAV)
+				gravWallChanged = true;
 			bmap[(cy+area_y)/CELL][(cx+area_x)/CELL] = 0;
 			delete_part(cx+area_x, cy+area_y, 0);
 		}
@@ -544,16 +546,7 @@ int Simulation::FloodParts(int x, int y, int fullc, int cm, int bm, int flags)
 	}
 	if (bm==-1)
 	{
-		if (c-UI_WALLSTART+UI_ACTUALSTART==WL_ERASE)
-		{
-			bm = bmap[y/CELL][x/CELL];
-			if (!bm)
-				return 0;
-			if (bm==WL_WALL)
-				cm = 0xFF;
-		}
-		else
-			bm = 0;
+		bm = bmap[y/CELL][x/CELL];
 	}
 
 	if (((pmap[y][x]&0xFF)!=cm || bmap[y/CELL][x/CELL]!=bm ))
@@ -633,16 +626,7 @@ int Simulation::FloodWalls(int x, int y, int c, int cm, int bm, int flags)
 	int co = c;
 	if (cm==-1)
 	{
-		if (c==0)
-		{
-			cm = pmap[y][x]&0xFF;
-			if (!cm)
-				return 0;
-			//if ((flags&BRUSH_REPLACEMODE) && cm!=SLALT)
-			//	return 0;
-		}
-		else
-			cm = 0;
+		cm = pmap[y][x]&0xFF;
 	}
 	if (bm==-1)
 	{
@@ -651,8 +635,6 @@ int Simulation::FloodWalls(int x, int y, int c, int cm, int bm, int flags)
 			bm = bmap[y/CELL][x/CELL];
 			if (!bm)
 				return 0;
-			if (bm==WL_WALL)
-				cm = 0xFF;
 		}
 		else
 			bm = 0;
@@ -697,7 +679,7 @@ int Simulation::FloodWalls(int x, int y, int c, int cm, int bm, int flags)
 			if ((pmap[y+dy][x]&0xFF)==cm && bmap[(y+dy)/CELL][x/CELL]==bm)
 				if (!FloodWalls(x, y+dy, c, cm, bm, flags))
 					return 0;
-	return 0;
+	return 1;
 }
 int Simulation::flood_water(int x, int y, int i, int originaly, int check)
 {
@@ -766,6 +748,41 @@ int Simulation::create_part_add_props(int p, int x, int y, int tv, int rx, int r
 			parts[p].tmp=300;
 	}
 	return p;
+}
+
+void Simulation::SetEdgeMode(int newEdgeMode)
+{
+	edgeMode = newEdgeMode;
+	switch(edgeMode)
+	{
+	case 0:
+		for(int i = 0; i<(XRES/CELL); i++)
+		{
+			bmap[0][i] = 0;
+			bmap[YRES/CELL-1][i] = 0;
+		}
+		for(int i = 1; i<((YRES/CELL)-1); i++)
+		{
+			bmap[i][0] = 0;
+			bmap[i][XRES/CELL-1] = 0;
+		}
+		break;
+	case 1:
+		int i;
+		for(i=0; i<(XRES/CELL); i++)
+		{
+			bmap[0][i] = WL_WALL;
+			bmap[YRES/CELL-1][i] = WL_WALL;
+		}
+		for(i=1; i<((YRES/CELL)-1); i++)
+		{
+			bmap[i][0] = WL_WALL;
+			bmap[i][XRES/CELL-1] = WL_WALL;
+		}
+		break;
+	default:
+		SetEdgeMode(0);
+	}
 }
 
 void Simulation::ApplyDecoration(int x, int y, int colR_, int colG_, int colB_, int colA_, int mode)
@@ -1240,6 +1257,10 @@ int Simulation::CreateWalls(int x, int y, int rx, int ry, int c, int flags, Brus
 					fvx[j][i] = 0.0f;
 					fvy[j][i] = 0.0f;
 				}
+				if (b==WL_GRAV || bmap[j][i]==WL_GRAV)
+				{
+					gravWallChanged = true;
+				}
 				if (b==WL_STREAM)
 				{
 					i = x + rx/2;
@@ -1253,7 +1274,6 @@ int Simulation::CreateWalls(int x, int y, int rx, int ry, int c, int flags, Brus
 					bmap[j][i] = WL_STREAM;
 					continue;
 				}
-				if (b==0 && bmap[j][i]==WL_GRAV) gravwl_timeout = 60;
 				bmap[j][i] = b;
 			}
 		}
@@ -1816,6 +1836,7 @@ void Simulation::clear_sim(void)
 		grav->Clear();
 	if(air)
 		air->Clear();
+	SetEdgeMode(edgeMode);
 }
 void Simulation::init_can_move()
 {
@@ -2458,12 +2479,14 @@ void Simulation::part_change_type(int i, int x, int y, int t)//changes the type 
 	}
 }
 
-int Simulation::create_part(int p, int x, int y, int tv)//the function for creating a particle, use p=-1 for creating a new particle, -2 is from a brush, or a particle number to replace a particle.
+//the function for creating a particle, use p=-1 for creating a new particle, -2 is from a brush, or a particle number to replace a particle.
+//tv = Type (8 bits) + Var (24 bits), var is usually 0
+int Simulation::create_part(int p, int x, int y, int tv)
 {
 	int i;
 
 	int t = tv & 0xFF;
-	int v = (tv >> 8) & 0xFF;
+	int v = (tv >> 8) & 0xFFFFFF;
 
 	if (x<0 || y<0 || x>=XRES || y>=YRES || ((t<=0 || t>=PT_NUM)&&t!=SPC_HEAT&&t!=SPC_COOL&&t!=SPC_AIR&&t!=SPC_VACUUM&&t!=SPC_PGRV&&t!=SPC_NGRV))
 		return -1;
@@ -2763,6 +2786,11 @@ int Simulation::create_part(int p, int x, int y, int tv)//the function for creat
 				break;
 			case PT_EMBR:
 				parts[i].life = 50;
+				break;
+			case PT_TESC:
+				parts[i].tmp = v;
+				if (parts[i].tmp > 300)
+					parts[i].tmp=300;
 				break;
 			case PT_STKM:
 				if (player.spwn==0)
@@ -4341,6 +4369,12 @@ void Simulation::update_particles()//doesn't update the particles themselves, bu
 			gravy = grav->gravy;
 			gravp = grav->gravp;
 			gravmap = grav->gravmap;
+
+			if(gravWallChanged)
+			{
+				grav->gravity_mask();
+				gravWallChanged = false;
+			}
 		}
 	}
 
