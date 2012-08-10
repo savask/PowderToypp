@@ -22,6 +22,7 @@
 #endif
 
 #include "Format.h"
+#include "Style.h"
 #include "interface/Engine.h"
 #include "interface/Button.h"
 #include "interface/Panel.h"
@@ -244,9 +245,12 @@ std::map<std::string, std::string> readArguments(int argc, char * argv[])
 		{
 			arguments["scale"] = std::string(argv[i]+6);
 		}
-		else if (!strncmp(argv[i], "proxy:", 6) && argv[i]+6)
+		else if (!strncmp(argv[i], "proxy:", 6))
 		{
-			arguments["proxy"] =  std::string(argv[i]+6);
+			if(argv[i]+6)
+				arguments["proxy"] =  std::string(argv[i]+6);
+			else
+				arguments["proxy"] = "false";
 		}
 		else if (!strncmp(argv[i], "nohud", 5))
 		{
@@ -319,6 +323,27 @@ int main(int argc, char * argv[])
 		Client::Ref().SetPref("Scale", tempScale);
 	}
 
+	std::string proxyString = "";
+	if(arguments["proxy"].length())
+	{
+		if(arguments["proxy"] == "false")
+		{
+			proxyString = "";
+			Client::Ref().SetPref("Proxy", "");	
+		}
+		else
+		{
+			proxyString = (arguments["proxy"]);
+			Client::Ref().SetPref("Proxy", arguments["proxy"]);
+		}
+	}
+	else if(Client::Ref().GetPrefString("Proxy", "").length())
+	{
+		proxyString = (Client::Ref().GetPrefString("Proxy", ""));
+	}
+
+	Client::Ref().Initialise(proxyString);
+
 	if(tempScale != 1 && tempScale != 2)
 		tempScale = 1;
 
@@ -338,6 +363,101 @@ int main(int argc, char * argv[])
 
 	GameController * gameController = new GameController();
 	engine->ShowWindow(gameController->GetView());
+
+	if(arguments["open"].length())
+	{
+#ifdef DEBUG
+		std::cout << "Loading " << arguments["open"] << std::endl;
+#endif
+		if(Client::Ref().FileExists(arguments["open"]))
+		{
+			try
+			{
+				std::vector<unsigned char> gameSaveData = Client::Ref().ReadFile(arguments["open"]);
+				if(!gameSaveData.size())
+				{
+					new ErrorMessage("Error", "Could not read file");
+				}
+				else
+				{
+					SaveFile * newFile = new SaveFile(arguments["open"]);
+					GameSave * newSave = new GameSave(gameSaveData);
+					newFile->SetGameSave(newSave);
+					gameController->LoadSaveFile(newFile);
+					delete newFile;
+				}
+
+			}
+			catch(std::exception & e)
+			{
+				new ErrorMessage("Error", "Could not open save file:\n"+std::string(e.what())) ;
+			}
+		}
+		else
+		{
+			new ErrorMessage("Error", "Could not open file");
+		}
+	}
+
+	if(arguments["ptsave"].length())
+	{
+		engine->g->fillrect((engine->GetWidth()/2)-101, (engine->GetHeight()/2)-26, 202, 52, 0, 0, 0, 210);
+		engine->g->drawrect((engine->GetWidth()/2)-100, (engine->GetHeight()/2)-25, 200, 50, 255, 255, 255, 180);
+		engine->g->drawtext((engine->GetWidth()/2)-(Graphics::textwidth("Loading save...")/2), (engine->GetHeight()/2)-5, "Loading save...", style::Colour::InformationTitle.Red, style::Colour::InformationTitle.Green, style::Colour::InformationTitle.Blue, 255);
+
+#ifdef OGLI
+		blit();
+#else
+		if(engine->Scale==2)
+			blit2(engine->g->vid, engine->Scale);
+		else
+			blit(engine->g->vid);
+#endif
+		std::string ptsaveArg = arguments["ptsave"];
+		try
+		{
+		if(!ptsaveArg.find("ptsave:"))
+		{
+			std::string saveIdPart = "";
+			int saveId;
+			int hashPos = ptsaveArg.find('#');
+			if(hashPos != std::string::npos)
+			{
+				saveIdPart = ptsaveArg.substr(7, hashPos-7);
+			}
+			else
+			{
+				saveIdPart = ptsaveArg.substr(7);
+			}
+			if(saveIdPart.length())
+			{
+#ifdef DEBUG
+				std::cout << "Got Ptsave: id: " <<  saveIdPart << std::endl;
+#endif
+				saveId = format::StringToNumber<int>(saveIdPart);
+				if(!saveId)
+					throw std::runtime_error("Invalid Save ID");
+
+				SaveInfo * newSave = Client::Ref().GetSave(saveId, 0);
+				GameSave * newGameSave = new GameSave(Client::Ref().GetSaveData(saveId, 0));
+				newSave->SetGameSave(newGameSave);
+				if(!newSave)
+					throw std::runtime_error("Could not load save");
+
+				gameController->LoadSave(newSave);
+				delete newSave;
+			}
+			else
+			{
+				throw std::runtime_error("No Save ID");
+			}
+		}
+		}
+		catch (std::exception & e)
+		{
+			new ErrorMessage("Error", "Invalid save link");
+		}
+	}
 
 	SDL_Event event;
 	while(engine->Running())

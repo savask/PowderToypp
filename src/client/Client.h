@@ -88,6 +88,9 @@ public:
 
 	std::vector<unsigned char> ReadFile(std::string filename);
 
+	void Initialise(std::string proxyString);
+	void SetProxy(std::string proxy);
+
 	void WriteFile(std::vector<unsigned char> fileData, std::string filename);
 	void WriteFile(std::vector<char> fileData, std::string filename);
 	bool FileExists(std::string filename);
@@ -108,6 +111,7 @@ public:
 	RequestStatus AddComment(int saveID, std::string comment);
 
 	unsigned char * GetSaveData(int saveID, int saveDate, int & dataLength);
+	std::vector<unsigned char> GetSaveData(int saveID, int saveDate);
 	LoginStatus Login(string username, string password, User & user);
 	void ClearThumbnailRequests();
 	std::vector<SaveInfo*> * SearchSaves(int start, int count, string query, string sort, string category, int & resultCount);
