@@ -308,12 +308,18 @@ void Renderer::FinaliseParts()
 #endif
 
 #if defined(OGLI) && !defined(OGLR)
-	render_gravlensing(warpVid);
+	if(display_mode & DISPLAY_WARP)
+	{
+		render_gravlensing(warpVid);
+	}
 	g->draw_image(vid, 0, 0, VIDXRES, VIDYRES, 255);
 #endif
 
 #if !defined(OGLR) && !defined(OGLI)
-	render_gravlensing(warpVid);
+	if(display_mode & DISPLAY_WARP)
+	{
+		render_gravlensing(warpVid);
+	}
 #endif
 }
 
@@ -2367,7 +2373,7 @@ void Renderer::CompileRenderMode()
 
 void Renderer::ClearAccumulation()
 {
-	//Fire
+	emp_decor = 0;
 	std::fill(fire_r[0]+0, fire_r[(YRES/CELL)-1]+((XRES/CELL)-1), 0);
 	std::fill(fire_g[0]+0, fire_g[(YRES/CELL)-1]+((XRES/CELL)-1), 0);
 	std::fill(fire_b[0]+0, fire_b[(YRES/CELL)-1]+((XRES/CELL)-1), 0);
@@ -2471,6 +2477,13 @@ unsigned int Renderer::GetColourMode()
 
 Renderer::~Renderer()
 {
+#if !defined(OGLR)
+#if defined(OGLI)
+	delete[] vid;
+#endif
+	delete[] persistentVid;
+	delete[] warpVid;
+#endif
 	free(graphicscache);
 	free(flm_data);
 	free(plasma_data);

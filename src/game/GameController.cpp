@@ -2,6 +2,7 @@
 #include <iostream>
 #include <queue>
 #include "Config.h"
+#include "Format.h"
 #include "GameController.h"
 #include "GameModel.h"
 #include "client/SaveInfo.h"
@@ -10,6 +11,7 @@
 #include "login/LoginController.h"
 #include "interface/Point.h"
 #include "dialogues/ErrorMessage.h"
+#include "dialogues/InformationMessage.h"
 #include "dialogues/ConfirmPrompt.h"
 #include "GameModelException.h"
 #include "simulation/Air.h"
@@ -47,6 +49,27 @@ public:
 			try
 			{
 				cc->gameModel->SetSave(cc->search->GetLoadedSave());
+			}
+			catch(GameModelException & ex)
+			{
+				new ErrorMessage("Cannot open save", ex.what());
+			}
+		}
+	}
+};
+
+class GameController::SaveOpenCallback: public ControllerCallback
+{
+	GameController * cc;
+public:
+	SaveOpenCallback(GameController * cc_) { cc = cc_; }
+	virtual void ControllerExit()
+	{
+		if(cc->activePreview->GetDoOpen() && cc->activePreview->GetSave())
+		{
+			try
+			{
+				cc->LoadSave(cc->activePreview->GetSave());
 			}
 			catch(GameModelException & ex)
 			{
@@ -113,6 +136,7 @@ GameController::GameController():
 		console(NULL),
 		tagsWindow(NULL),
 		options(NULL),
+		activePreview(NULL),
 		HasDone(false)
 {
 	gameView = new GameView();
@@ -150,6 +174,10 @@ GameController::~GameController()
 	{
 		delete console;
 	}
+	if(activePreview)
+	{
+		delete activePreview;
+	}
 	if(ui::Engine::Ref().GetWindow() == gameView)
 	{
 		ui::Engine::Ref().CloseWindow();
@@ -172,6 +200,36 @@ void GameController::PlaceSave(ui::Point position)
 	}
 }
 
+void GameController::Install()
+{
+#if defined(MACOSX)
+	new InformationMessage("No Installation necessary", "You don't need to install The Powder Toy on Mac OS X");
+#elif defined(WIN) || defined(LIN)
+	class InstallConfirmation: public ConfirmDialogueCallback {
+	public:
+		GameController * c;
+		InstallConfirmation(GameController * c_) {	c = c_;	}
+		virtual void ConfirmCallback(ConfirmPrompt::DialogueResult result) {
+			if (result == ConfirmPrompt::ResultOkay)
+			{
+				if(Client::Ref().DoInstallation())
+				{
+					new InformationMessage("Install Success", "The installation completed without error");
+				}
+				else
+				{
+					new ErrorMessage("Could not install", "The installation did not complete due to an error");
+				}
+			}
+		}
+		virtual ~InstallConfirmation() { }
+	};
+	new ConfirmPrompt("Install The Powder Toy", "You are about to install The Powder Toy onto this computer", new InstallConfirmation(this));
+#else
+	new ErrorMessage("Cannot install", "You cannot install The Powder Toy on this platform");
+#endif
+}
+
 void GameController::AdjustBrushSize(int direction, bool logarithmic, bool xAxis, bool yAxis)
 {
 	if(xAxis && yAxis)
@@ -187,6 +245,10 @@ void GameController::AdjustBrushSize(int direction, bool logarithmic, bool xAxis
 			newSize.X = 0;
 	if(newSize.Y<0)
 			newSize.Y = 0;
+	if(newSize.X>128)
+			newSize.X = 128;
+	if(newSize.Y>128)
+			newSize.Y = 128;
 
 	if(xAxis)
 		gameModel->GetBrush()->SetRadius(ui::Point(newSize.X, oldSize.Y));
@@ -202,9 +264,9 @@ void GameController::AdjustZoomSize(int direction, bool logarithmic)
 {
 	int newSize;
 	if(logarithmic)
-		newSize = gameModel->GetZoomSize()+direction;
-	else
 		newSize = gameModel->GetZoomSize()+(((gameModel->GetZoomSize()/10)>0?(gameModel->GetZoomSize()/10):1)*direction);
+	else
+		newSize = gameModel->GetZoomSize()+direction;
 	if(newSize<5)
 			newSize = 5;
 	if(newSize>64)
@@ -241,9 +303,11 @@ void GameController::DrawRect(int toolSelection, ui::Point point1, ui::Point poi
 {
 	Simulation * sim = gameModel->GetSimulation();
 	Tool * activeTool = gameModel->GetActiveTool(toolSelection);
+	gameModel->SetLastTool(activeTool);
 	Brush * cBrush = gameModel->GetBrush();
 	if(!activeTool || !cBrush)
 		return;
+	activeTool->SetStrength(gameModel->GetToolStrength());
 	activeTool->DrawRect(sim, cBrush, PointTranslate(point1), PointTranslate(point2));
 }
 
@@ -251,9 +315,11 @@ void GameController::DrawLine(int toolSelection, ui::Point point1, ui::Point poi
 {
 	Simulation * sim = gameModel->GetSimulation();
 	Tool * activeTool = gameModel->GetActiveTool(toolSelection);
+	gameModel->SetLastTool(activeTool);
 	Brush * cBrush = gameModel->GetBrush();
 	if(!activeTool || !cBrush)
 		return;
+	activeTool->SetStrength(gameModel->GetToolStrength());
 	activeTool->DrawLine(sim, cBrush, PointTranslate(point1), PointTranslate(point2));
 }
 
@@ -261,9 +327,11 @@ void GameController::DrawFill(int toolSelection, ui::Point point)
 {
 	Simulation * sim = gameModel->GetSimulation();
 	Tool * activeTool = gameModel->GetActiveTool(toolSelection);
+	gameModel->SetLastTool(activeTool);
 	Brush * cBrush = gameModel->GetBrush();
 	if(!activeTool || !cBrush)
 		return;
+	activeTool->SetStrength(gameModel->GetToolStrength());
 	activeTool->DrawFill(sim, cBrush, PointTranslate(point));
 }
 
@@ -271,6 +339,7 @@ void GameController::DrawPoints(int toolSelection, queue<ui::Point*> & pointQueu
 {
 	Simulation * sim = gameModel->GetSimulation();
 	Tool * activeTool = gameModel->GetActiveTool(toolSelection);
+	gameModel->SetLastTool(activeTool);
 	Brush * cBrush = gameModel->GetBrush();
 	if(!activeTool || !cBrush)
 	{
@@ -282,8 +351,10 @@ void GameController::DrawPoints(int toolSelection, queue<ui::Point*> & pointQueu
 				pointQueue.pop();
 			}
 		}
+		return;
 	}
 
+	activeTool->SetStrength(gameModel->GetToolStrength());
 	if(!pointQueue.empty())
 	{
 		ui::Point sPoint(0, 0);
@@ -377,7 +448,41 @@ bool GameController::MouseDown(int x, int y, unsigned button)
 
 bool GameController::MouseUp(int x, int y, unsigned button)
 {
-	return commandInterface->OnMouseUp(x, y, button);
+	bool ret = commandInterface->OnMouseUp(x, y, button);
+	if(ret && y<YRES && x<XRES)
+	{
+		if (true)//If it's not a sign tool
+		{
+			Simulation * sim = gameModel->GetSimulation();
+			for (std::vector<sign>::iterator iter = sim->signs.begin(), end = sim->signs.end(); iter != end; ++iter)
+			{
+				int signx, signy, signw, signh;
+				(*iter).pos(signx, signy, signw, signh);
+				if (x>=signx && x<=signx+signw && y>=signy && y<=signy+signh)
+				{
+					if (sregexp((*iter).text.c_str(), "^{c:[0-9]*|.*}$")==0)
+					{
+						const char * signText = (*iter).text.c_str();
+						char buff[256];
+						int sldr;
+
+						memset(buff, 0, sizeof(buff));
+
+						for (sldr=3; signText[sldr] != '|'; sldr++)
+							buff[sldr-3] = signText[sldr];
+
+						buff[sldr-3] = '\0';
+
+						int tempSaveID = format::StringToNumber<int>(std::string(buff));
+						if(tempSaveID)
+							OpenSavePreview(tempSaveID, 0);
+						break;
+					}
+				}
+			}
+		}
+	}
+	return ret;
 }
 
 bool GameController::MouseWheel(int x, int y, int d)
@@ -579,6 +684,12 @@ void GameController::Update()
 		search = NULL;
 	}
 
+	if(activePreview && activePreview->HasExited)
+	{
+		delete activePreview;
+		activePreview = NULL;
+	}
+
 	if(loginWindow && loginWindow->HasExited)
 	{
 		delete loginWindow;
@@ -589,6 +700,11 @@ void GameController::Update()
 void GameController::SetZoomEnabled(bool zoomEnabled)
 {
 	gameModel->SetZoomEnabled(zoomEnabled);
+}
+
+void GameController::SetToolStrength(float value)
+{
+	gameModel->SetToolStrength(value);
 }
 
 void GameController::SetZoomPosition(ui::Point position)
@@ -657,6 +773,7 @@ void GameController::SetActiveTool(int toolSelection, Tool * tool)
 {
 	gameModel->SetActiveTool(toolSelection, tool);
 	gameModel->GetRenderer()->gravityZonesEnabled = false;
+	gameModel->SetLastTool(tool);
 	for(int i = 0; i < 3; i++)
 	{
 		if(gameModel->GetActiveTool(i) == gameModel->GetMenuList().at(SC_WALL)->GetToolList().at(WL_GRAV))
@@ -704,6 +821,12 @@ void GameController::LoadSaveFile(SaveFile * file)
 void GameController::LoadSave(SaveInfo * save)
 {
 	gameModel->SetSave(save);
+}
+
+void GameController::OpenSavePreview(int saveID, int saveDate)
+{
+	activePreview = new PreviewController(saveID, new SaveOpenCallback(this));
+	ui::Engine::Ref().ShowWindow(activePreview->GetView());
 }
 
 void GameController::OpenLocalBrowse()

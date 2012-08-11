@@ -51,10 +51,12 @@ private:
 	SaveInfo * currentSave;
 	Simulation * sim;
 	Renderer * ren;
+	Tool * lastTool;
 	Tool * activeTools[3];
 	User currentUser;
 	bool colourSelector;
 	ui::Colour colour;
+	float toolStrength;
 
 	std::string infoTip;
 	std::string toolTip;
@@ -79,6 +81,7 @@ private:
 	void notifyInfoTipChanged();
 	void notifyToolTipChanged();
 	void notifyQuickOptionsChanged();
+	void notifyLastToolChanged();
 public:
 	GameModel();
 	~GameModel();
@@ -98,6 +101,12 @@ public:
 	void BuildQuickOptionMenu();
 
 	void UpdateQuickOptions();
+
+	void SetToolStrength(float value);
+	float GetToolStrength();
+
+	Tool * GetLastTool();
+	void SetLastTool(Tool * newTool);
 
 	void SetVote(int direction);
 	SaveInfo * GetSave();

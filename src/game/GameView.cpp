@@ -174,7 +174,8 @@ GameView::GameView():
 	showHud(true),
 	showDebug(false),
 	introText(2048),
-	introTextMessage(introTextData)
+	introTextMessage(introTextData),
+	wallBrush(false)
 {
 	
 	int currentX = 1;
@@ -495,6 +496,35 @@ GameView::GameView():
 	renderModePresets[9].ColourMode = COLOUR_GRAD;
 }
 
+GameView::~GameView()
+{
+	delete[] renderModePresets;
+
+	if(!colourRSlider->GetParentWindow())
+		delete colourRSlider;
+
+	if(!colourGSlider->GetParentWindow())
+		delete colourGSlider;
+
+	if(!colourBSlider->GetParentWindow())
+		delete colourBSlider;
+
+	if(!colourASlider->GetParentWindow())
+		delete colourASlider;
+
+	if(!colourRValue->GetParentWindow())
+		delete colourRValue;
+
+	if(!colourGValue->GetParentWindow())
+		delete colourGValue;
+
+	if(!colourBValue->GetParentWindow())
+		delete colourBValue;
+
+	if(!colourAValue->GetParentWindow())
+		delete colourAValue;
+}
+
 class GameView::MenuAction: public ui::ButtonAction
 {
 	GameView * v;
@@ -639,6 +669,18 @@ void GameView::NotifyActiveToolsChanged(GameModel * sender)
 		{
 			toolButtons[i]->SetSelectionState(-1);
 		}
+	}
+}
+
+void GameView::NotifyLastToolChanged(GameModel * sender)
+{
+	if(sender->GetLastTool() && sender->GetLastTool()->GetResolution() == CELL)
+	{
+		wallBrush = true;
+	}
+	else
+	{
+		wallBrush = false;
 	}
 }
 
@@ -1142,25 +1184,31 @@ void GameView::OnKeyPress(int key, Uint16 character, bool shift, bool ctrl, bool
 		enableAltBehaviour();
 		break;
 	case KEY_CTRL:
-		if(drawModeReset)
-			drawModeReset = false;
-		else
-			drawPoint1 = currentMouse;
-		if(shift)
-			drawMode = DrawFill;
-		else
-			drawMode = DrawRect;
+		if(!isMouseDown)
+		{
+			if(drawModeReset)
+				drawModeReset = false;
+			else
+				drawPoint1 = currentMouse;
+			if(shift)
+				drawMode = DrawFill;
+			else
+				drawMode = DrawRect;
+		}
 		enableCtrlBehaviour();
 		break;
 	case KEY_SHIFT:
-		if(drawModeReset)
-			drawModeReset = false;
-		else
-			drawPoint1 = currentMouse;
-		if(ctrl)
-			drawMode = DrawFill;
-		else
-			drawMode = DrawLine;
+		if(!isMouseDown)
+		{
+			if(drawModeReset)
+				drawModeReset = false;
+			else
+				drawPoint1 = currentMouse;
+			if(ctrl)
+				drawMode = DrawFill;
+			else
+				drawMode = DrawLine;
+		}
 		enableShiftBehaviour();
 		break;
 	case ' ': //Space
@@ -1256,10 +1304,20 @@ void GameView::OnKeyPress(int key, Uint16 character, bool shift, bool ctrl, bool
 		c->OpenStamps();
 		break;
 	case ']':
-		c->AdjustBrushSize(1, !alt, shiftBehaviour, ctrlBehaviour);
+		if(zoomEnabled && !zoomCursorFixed)
+			c->AdjustZoomSize(1, !alt);
+		else
+			c->AdjustBrushSize(1, !alt, shiftBehaviour, ctrlBehaviour);
 		break;
 	case '[':
-		c->AdjustBrushSize(-1, !alt, shiftBehaviour, ctrlBehaviour);
+		if(zoomEnabled && !zoomCursorFixed)
+			c->AdjustZoomSize(-1, !alt);
+		else
+			c->AdjustBrushSize(-1, !alt, shiftBehaviour, ctrlBehaviour);
+		break;
+	case 'i':
+		if(ctrl)
+			c->Install();
 		break;
 	}
 
@@ -1295,7 +1353,7 @@ void GameView::OnKeyRelease(int key, Uint16 character, bool shift, bool ctrl, bo
 		disableShiftBehaviour();
 		break;
 	case 'z':
-		if(!zoomCursorFixed)
+		if(!zoomCursorFixed && !alt)
 			c->SetZoomEnabled(false);
 		break;
 	}
@@ -1461,7 +1519,6 @@ void GameView::NotifyNotificationsChanged(GameModel * sender)
 	}
 	notificationComponents.clear();
 
-
 	std::vector<Notification*> notifications = sender->GetNotifications();
 
 	int currentY = YRES-23;
@@ -1538,6 +1595,13 @@ void GameView::enableShiftBehaviour()
 	if(!shiftBehaviour)
 	{
 		shiftBehaviour = true;
+		if(isMouseDown)
+		{
+			if(!ctrlBehaviour)
+				c->SetToolStrength(10.0f);
+			else
+				c->SetToolStrength(1.0f);
+		}
 	}
 }
 
@@ -1546,6 +1610,10 @@ void GameView::disableShiftBehaviour()
 	if(shiftBehaviour)
 	{
 		shiftBehaviour = false;
+		if(!ctrlBehaviour)
+			c->SetToolStrength(1.0f);
+		else
+			c->SetToolStrength(.1f);
 	}
 }
 
@@ -1572,10 +1640,17 @@ void GameView::enableCtrlBehaviour()
 		ctrlBehaviour = true;
 
 		//Show HDD save & load buttons
-		saveSimulationButton->Appearance.BackgroundInactive = ui::Colour(255, 255, 255);
-		saveSimulationButton->Appearance.TextInactive = ui::Colour(0, 0, 0);
-		searchButton->Appearance.BackgroundInactive = ui::Colour(255, 255, 255);
-		searchButton->Appearance.TextInactive = ui::Colour(0, 0, 0);
+		saveSimulationButton->Appearance.BackgroundInactive = saveSimulationButton->Appearance.BackgroundHover = ui::Colour(255, 255, 255);
+		saveSimulationButton->Appearance.TextInactive = saveSimulationButton->Appearance.TextHover = ui::Colour(0, 0, 0);
+		searchButton->Appearance.BackgroundInactive = searchButton->Appearance.BackgroundHover = ui::Colour(255, 255, 255);
+		searchButton->Appearance.TextInactive = searchButton->Appearance.TextHover = ui::Colour(0, 0, 0);
+		if(isMouseDown)
+		{
+			if(!shiftBehaviour)
+				c->SetToolStrength(.1f);
+			else
+				c->SetToolStrength(1.0f);
+		}
 	}
 }
 
@@ -1587,9 +1662,15 @@ void GameView::disableCtrlBehaviour()
 
 		//Hide HDD save & load buttons
 		saveSimulationButton->Appearance.BackgroundInactive = ui::Colour(0, 0, 0);
-		saveSimulationButton->Appearance.TextInactive = ui::Colour(255, 255, 255);
+		saveSimulationButton->Appearance.BackgroundHover = ui::Colour(20, 20, 20);
+		saveSimulationButton->Appearance.TextInactive = saveSimulationButton->Appearance.TextHover = ui::Colour(255, 255, 255);
 		searchButton->Appearance.BackgroundInactive = ui::Colour(0, 0, 0);
-		searchButton->Appearance.TextInactive = ui::Colour(255, 255, 255);
+		searchButton->Appearance.BackgroundHover = ui::Colour(20, 20, 20);
+		searchButton->Appearance.TextInactive = searchButton->Appearance.TextHover = ui::Colour(255, 255, 255);
+		if(!shiftBehaviour)
+			c->SetToolStrength(1.0f);
+		else
+			c->SetToolStrength(10.0f);
 	}
 }
 
@@ -1600,25 +1681,32 @@ void GameView::OnDraw()
 	{
 		ren->clearScreen(1.0f);
 		ren->RenderBegin();
-		if(selectMode == SelectNone && activeBrush && currentMouse.X > 0 && currentMouse.X < XRES && currentMouse.Y > 0 && currentMouse.Y < YRES)
+		if(selectMode == SelectNone && (!zoomEnabled || zoomCursorFixed) && activeBrush && currentMouse.X > 0 && currentMouse.X < XRES && currentMouse.Y > 0 && currentMouse.Y < YRES)
 		{
 			ui::Point finalCurrentMouse = c->PointTranslate(currentMouse);
+			ui::Point initialDrawPoint = drawPoint1;
+
+			if(wallBrush)
+			{
+				finalCurrentMouse = c->NormaliseBlockCoord(finalCurrentMouse);
+				initialDrawPoint = c->NormaliseBlockCoord(initialDrawPoint);
+			}
 
 			if(drawMode==DrawRect && isMouseDown)
 			{
 				if(drawSnap)
 				{
-					finalCurrentMouse = rectSnapCoords(c->PointTranslate(drawPoint1), finalCurrentMouse);
+					finalCurrentMouse = rectSnapCoords(c->PointTranslate(initialDrawPoint), finalCurrentMouse);
 				}
-				activeBrush->RenderRect(ren, c->PointTranslate(drawPoint1), finalCurrentMouse);
+				activeBrush->RenderRect(ren, c->PointTranslate(initialDrawPoint), finalCurrentMouse);
 			}
 			else if(drawMode==DrawLine && isMouseDown)
 			{
 				if(drawSnap)
 				{
-					finalCurrentMouse = lineSnapCoords(c->PointTranslate(drawPoint1), finalCurrentMouse);
+					finalCurrentMouse = lineSnapCoords(c->PointTranslate(initialDrawPoint), finalCurrentMouse);
 				}
-				activeBrush->RenderLine(ren, c->PointTranslate(drawPoint1), finalCurrentMouse);
+				activeBrush->RenderLine(ren, c->PointTranslate(initialDrawPoint), finalCurrentMouse);
 			}
 			else if(drawMode==DrawFill)
 			{
@@ -1626,7 +1714,19 @@ void GameView::OnDraw()
 			}
 			else
 			{
-				activeBrush->RenderPoint(ren, finalCurrentMouse);
+				if(wallBrush)
+				{
+					ui::Point finalBrushRadius = c->NormaliseBlockCoord(activeBrush->GetRadius());
+					ren->xor_line(finalCurrentMouse.X-finalBrushRadius.X, finalCurrentMouse.Y-finalBrushRadius.Y, finalCurrentMouse.X+finalBrushRadius.X+CELL-1, finalCurrentMouse.Y-finalBrushRadius.Y);
+					ren->xor_line(finalCurrentMouse.X-finalBrushRadius.X, finalCurrentMouse.Y+finalBrushRadius.Y+CELL-1, finalCurrentMouse.X+finalBrushRadius.X+CELL-1, finalCurrentMouse.Y+finalBrushRadius.Y+CELL-1);
+				
+					ren->xor_line(finalCurrentMouse.X-finalBrushRadius.X, finalCurrentMouse.Y-finalBrushRadius.Y+1, finalCurrentMouse.X-finalBrushRadius.X, finalCurrentMouse.Y+finalBrushRadius.Y+CELL-2);
+					ren->xor_line(finalCurrentMouse.X+finalBrushRadius.X+CELL-1, finalCurrentMouse.Y-finalBrushRadius.Y+1, finalCurrentMouse.X+finalBrushRadius.X+CELL-1, finalCurrentMouse.Y+finalBrushRadius.Y+CELL-2);
+				}
+				else
+				{
+					activeBrush->RenderPoint(ren, finalCurrentMouse);
+				}
 			}
 		}
 		ren->RenderEnd();

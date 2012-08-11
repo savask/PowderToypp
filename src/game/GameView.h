@@ -43,6 +43,7 @@ private:
 	bool altBehaviour;
 	bool showHud;
 	bool showDebug;
+	bool wallBrush;
 	int introText;
 	std::string introTextMessage;
 	int toolIndex;
@@ -118,6 +119,7 @@ private:
 	void disableAltBehaviour();
 public:
     GameView();
+    virtual ~GameView();
 
     //Breaks MVC, but any other way is going to be more of a mess.
     ui::Point GetMousePosition();
@@ -144,6 +146,7 @@ public:
 	void NotifyToolTipChanged(GameModel * sender);
 	void NotifyInfoTipChanged(GameModel * sender);
 	void NotifyQuickOptionsChanged(GameModel * sender);
+	void NotifyLastToolChanged(GameModel * sender);
 
 	void ExitPrompt();
 

@@ -23,7 +23,8 @@ GameModel::GameModel():
 	clipboard(NULL),
 	stamp(NULL),
 	placeSave(NULL),
-	colour(255, 0, 0, 255)
+	colour(255, 0, 0, 255),
+	toolStrength(1.0f)
 {
 	sim = new Simulation();
 	ren = new Renderer(ui::Engine::Ref().g, sim);
@@ -238,6 +239,7 @@ void GameModel::BuildMenus()
 	activeTools[0] = menuList[SC_POWDERS]->GetToolList()[0];
 	activeTools[1] = menuList[SC_SPECIAL]->GetToolList()[0];
 	activeTools[2] = NULL;
+	lastTool = activeTools[0];
 
 	//Set default menu
 	activeMenu = menuList[SC_POWDERS];
@@ -246,6 +248,7 @@ void GameModel::BuildMenus()
 	notifyMenuListChanged();
 	notifyToolListChanged();
 	notifyActiveToolsChanged();
+	notifyLastToolChanged();
 }
 
 void GameModel::SetVote(int direction)
@@ -292,7 +295,18 @@ void GameModel::AddObserver(GameView * observer){
 	observer->NotifyColourSelectorVisibilityChanged(this);
 	observer->NotifyColourSelectorColourChanged(this);
 	observer->NotifyQuickOptionsChanged(this);
+	observer->NotifyLastToolChanged(this);
 	UpdateQuickOptions();
+}
+
+void GameModel::SetToolStrength(float value)
+{
+	toolStrength = value;
+}
+
+float GameModel::GetToolStrength()
+{
+	return toolStrength;
 }
 
 void GameModel::SetActiveMenu(Menu * menu)
@@ -416,6 +430,20 @@ Renderer * GameModel::GetRenderer()
 User GameModel::GetUser()
 {
 	return currentUser;
+}
+
+Tool * GameModel::GetLastTool()
+{
+	return lastTool;
+}
+
+void GameModel::SetLastTool(Tool * newTool)
+{
+	if(lastTool != newTool)
+	{
+		lastTool = newTool;
+		notifyLastToolChanged();
+	}
 }
 
 void GameModel::SetZoomEnabled(bool enabled)
@@ -810,5 +838,13 @@ void GameModel::notifyQuickOptionsChanged()
 	for(int i = 0; i < observers.size(); i++)
 	{
 		observers[i]->NotifyQuickOptionsChanged(this);
+	}
+}
+
+void GameModel::notifyLastToolChanged()
+{
+	for(int i = 0; i < observers.size(); i++)
+	{
+		observers[i]->NotifyLastToolChanged(this);
 	}
 }
