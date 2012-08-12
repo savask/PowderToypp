@@ -7,8 +7,11 @@
 
 #include <string>
 #include "Config.h"
+#include "Format.h"
 #include "LuaScriptInterface.h"
 #include "TPTScriptInterface.h"
+#include "dialogues/ErrorMessage.h"
+#include "dialogues/InformationMessage.h"
 #include "simulation/Simulation.h"
 #include "game/GameModel.h"
 #include "LuaScriptHelper.h"
@@ -81,6 +84,7 @@ LuaScriptInterface::LuaScriptInterface(GameModel * m):
 		{"screenshot",&luatpt_screenshot},
 		{"element",&luatpt_getelement},
 		{"element_func",&luatpt_element_func},
+		{"graphics_func",&luatpt_graphics_func},
 		{NULL,NULL}
 	};
 
@@ -90,6 +94,7 @@ LuaScriptInterface::LuaScriptInterface(GameModel * m):
 	luacon_model = m;
 	luacon_sim = m->GetSimulation();
 	luacon_g = ui::Engine::Ref().g;
+	luacon_ren = m->GetRenderer();
 	luacon_ci = this;
 
 	l = lua_open();
@@ -214,6 +219,7 @@ tpt.partsdata = nil");
 
 	lua_el_func = (int*)calloc(PT_NUM, sizeof(int));
 	lua_el_mode = (int*)calloc(PT_NUM, sizeof(int));
+	lua_gr_func = (int*)calloc(PT_NUM, sizeof(int));
 	for(i = 0; i < PT_NUM; i++)
 	{
 		lua_el_mode[i] = 0;
@@ -255,7 +261,7 @@ bool LuaScriptInterface::OnMouseWheel(int x, int y, int d)
 
 bool LuaScriptInterface::OnKeyPress(int key, Uint16 character, bool shift, bool ctrl, bool alt)
 {
-	int modifiers;
+	int modifiers = 0;
 	if(shift)
 		modifiers |= 0x001;
 	if(ctrl)
@@ -267,7 +273,7 @@ bool LuaScriptInterface::OnKeyPress(int key, Uint16 character, bool shift, bool 
 
 bool LuaScriptInterface::OnKeyRelease(int key, Uint16 character, bool shift, bool ctrl, bool alt)
 {
-	int modifiers;
+	int modifiers = 0;
 	if(shift)
 		modifiers |= 0x001;
 	if(ctrl)
@@ -787,7 +793,7 @@ int luacon_elementwrite(lua_State* l){
 		if (modified_stuff & LUACON_EL_MODIFIED_CANMOVE)
 			luacon_sim->init_can_move();
 		if (modified_stuff & LUACON_EL_MODIFIED_GRAPHICS)
-			memset(luacon_model->GetRenderer()->graphicscache, 0, sizeof(gcache_item)*PT_NUM);
+			memset(luacon_ren->graphicscache, 0, sizeof(gcache_item)*PT_NUM);
 	}
 	free(key);
 	return 0;
@@ -830,6 +836,7 @@ int luacon_mouseevent(int mx, int my, int mb, int event, int mouse_wheel){
 	}
 	return mpcontinue;
 }
+
 int luacon_step(int mx, int my, int selectl, int selectr, int bsx, int bsy){
 	int tempret = 0, tempb, i, callret;
 	lua_pushinteger(luacon_ci->l, bsy);
@@ -861,27 +868,12 @@ int luacon_step(int mx, int my, int selectl, int selectr, int bsx, int bsy){
 	}
 	return 0;
 }
+
+
 int luacon_eval(char *command){
 	return luaL_dostring (luacon_ci->l, command);
 }
-int luacon_part_update(int t, int i, int x, int y, int surround_space, int nt)
-{
-	int retval = 0;
-	if(lua_el_func[t]){
-		lua_rawgeti(luacon_ci->l, LUA_REGISTRYINDEX, lua_el_func[t]);
-		lua_pushinteger(luacon_ci->l, i);
-		lua_pushinteger(luacon_ci->l, x);
-		lua_pushinteger(luacon_ci->l, y);
-		lua_pushinteger(luacon_ci->l, surround_space);
-		lua_pushinteger(luacon_ci->l, nt);
-		lua_pcall(luacon_ci->l, 5, 1, 0);
-		if(lua_isboolean(luacon_ci->l, -1)){
-			retval = lua_toboolean(luacon_ci->l, -1);
-		}
-		lua_pop(luacon_ci->l, 1);
-	}
-	return retval;
-}
+
 char *luacon_geterror(){
 	char *error = (char*)lua_tostring(luacon_ci->l, -1);
 	if(error==NULL || !error[0]){
@@ -910,22 +902,38 @@ int luatpt_getelement(lua_State *l)
 	lua_pushinteger(l, t);
 	return 1;
 }
+
+int luacon_elementReplacement(UPDATE_FUNC_ARGS)
+{
+	int retval = 0;
+	if(lua_el_func[parts[i].type]){
+		lua_rawgeti(luacon_ci->l, LUA_REGISTRYINDEX, lua_el_func[parts[i].type]);
+		lua_pushinteger(luacon_ci->l, i);
+		lua_pushinteger(luacon_ci->l, x);
+		lua_pushinteger(luacon_ci->l, y);
+		lua_pushinteger(luacon_ci->l, surround_space);
+		lua_pushinteger(luacon_ci->l, nt);
+		lua_pcall(luacon_ci->l, 5, 1, 0);
+		if(lua_isboolean(luacon_ci->l, -1)){
+			retval = lua_toboolean(luacon_ci->l, -1);
+		}
+		lua_pop(luacon_ci->l, 1);
+	}
+	return retval;
+}
+
 int luatpt_element_func(lua_State *l)
 {
 	if(lua_isfunction(l, 1))
 	{
 		int element = luaL_optint(l, 2, 0);
-		int replace = luaL_optint(l, 3, 0);
 		int function;
 		lua_pushvalue(l, 1);
 		function = luaL_ref(l, LUA_REGISTRYINDEX);
 		if(element > 0 && element < PT_NUM)
 		{
 			lua_el_func[element] = function;
-			if(replace)
-				lua_el_mode[element] = 2;
-			else
-				lua_el_mode[element] = 1;
+			luacon_sim->elements[element].Update = &luacon_elementReplacement;
 			return 0;
 		}
 		else
@@ -933,20 +941,64 @@ int luatpt_element_func(lua_State *l)
 			return luaL_error(l, "Invalid element");
 		}
 	}
+	else
+		return luaL_error(l, "Not a function");
 	return 0;
 }
+
+int luacon_graphicsReplacement(GRAPHICS_FUNC_ARGS)
+{
+	int cache = 0;
+	lua_rawgeti(luacon_ci->l, LUA_REGISTRYINDEX, lua_gr_func[cpart->type]);
+	lua_pushinteger(luacon_ci->l, 0);
+	lua_pushinteger(luacon_ci->l, *colr);
+	lua_pushinteger(luacon_ci->l, *colg);
+	lua_pushinteger(luacon_ci->l, *colb);
+	lua_pcall(luacon_ci->l, 4, 10, 0);
+
+	cache = luaL_optint(luacon_ci->l, -10, 0);
+	*pixel_mode = luaL_optint(luacon_ci->l, -9, *pixel_mode);
+	*cola = luaL_optint(luacon_ci->l, -8, *cola);
+	*colr = luaL_optint(luacon_ci->l, -7, *colr);
+	*colg = luaL_optint(luacon_ci->l, -6, *colg);
+	*colb = luaL_optint(luacon_ci->l, -5, *colb);
+	*firea = luaL_optint(luacon_ci->l, -4, *firea);
+	*firer = luaL_optint(luacon_ci->l, -3, *firer);
+	*fireg = luaL_optint(luacon_ci->l, -2, *fireg);
+	*fireb = luaL_optint(luacon_ci->l, -1, *fireb);
+	lua_pop(luacon_ci->l, 10);
+	return cache;
+}
+
+int luatpt_graphics_func(lua_State *l)
+{
+	if(lua_isfunction(l, 1))
+	{
+		int element = luaL_optint(l, 2, 0);
+		int function;
+		lua_pushvalue(l, 1);
+		function = luaL_ref(l, LUA_REGISTRYINDEX);
+		if(element > 0 && element < PT_NUM)
+		{
+			lua_gr_func[element] = function;
+			luacon_ren->graphicscache[element].isready = 0;
+			luacon_sim->elements[element].Graphics = &luacon_graphicsReplacement;
+			return 0;
+		}
+		else
+		{
+			return luaL_error(l, "Invalid element");
+		}
+	}
+	else
+		return luaL_error(l, "Not a function");
+	return 0;
+}
+
 int luatpt_error(lua_State* l)
 {
-	/*char *error = "";
-	error = mystrdup((char*)luaL_optstring(l, 1, "Error text"));
-	if(vid_buf!=NULL){
-		error_ui(vid_buf, 0, error);
-		free(error);
-		return 0;
-	}
-	free(error);
-	return luaL_error(l, "Screen buffer does not exist");*/
-	//TODO IMPLEMENT
+	std::string errorMessage = std::string(luaL_optstring(l, 1, "Error text"));
+	new ErrorMessage("Error", errorMessage);
 	return 0;
 }
 int luatpt_drawtext(lua_State* l)
@@ -1482,7 +1534,7 @@ int luatpt_get_property(lua_State* l)
 
 int luatpt_drawpixel(lua_State* l)
 {
-	/*int x, y, r, g, b, a;
+	int x, y, r, g, b, a;
 	x = luaL_optint(l, 1, 0);
 	y = luaL_optint(l, 2, 0);
 	r = luaL_optint(l, 3, 255);
@@ -1500,12 +1552,8 @@ int luatpt_drawpixel(lua_State* l)
 	if (b>255) b = 255;
 	if (a<0) a = 0;
 	if (a>255) a = 255;
-	if (luacon_g->vid!=NULL)
-	{
-		luacon_g->drawpixel(x, y, r, g, b, a);
-		return 0;
-	}*/
-	return luaL_error(l, "Deprecated");
+	luacon_g->blendpixel(x, y, r, g, b, a);
+	return 0;
 }
 
 int luatpt_drawrect(lua_State* l)
@@ -1615,10 +1663,6 @@ int luatpt_get_name(lua_State* l)
 
 int luatpt_set_shortcuts(lua_State* l)
 {
-	/*int state;
-	state = luaL_optint(l, 1, 0);
-	sys_shortcuts = (state==0?0:1);
-	return 0;*/
 	return luaL_error(l, "set_shortcuts: deprecated");
 }
 
@@ -1822,20 +1866,9 @@ int luatpt_input(lua_State* l)
 }
 int luatpt_message_box(lua_State* l)
 {
-	/*char *title, *text;
-	title = mystrdup(luaL_optstring(l, 1, "Title"));
-	text = mystrdup(luaL_optstring(l, 2, "Message"));
-	if (vid_buf!=NULL)
-	{
-		info_ui(vid_buf, title, text);
-		free(title);
-		free(text);
-		return 0;
-	}
-	free(title);
-	free(text);
-	return luaL_error(l, "Screen buffer does not exist");;*/
-	//TODO IMPLEMENT
+	std::string title = std::string(luaL_optstring(l, 1, "Title"));
+	std::string message = std::string(luaL_optstring(l, 2, "Message"));
+	new InformationMessage(title, message);
 	return 0;
 }
 int luatpt_get_numOfParts(lua_State* l)
@@ -1888,15 +1921,12 @@ int luatpt_hud(lua_State* l)
 }
 int luatpt_gravity(lua_State* l)
 {
-	//luacon_sim->
-    /*int gravstate;
+    int gravstate;
     gravstate = luaL_optint(l, 1, 0);
     if(gravstate)
-        start_grav_async();
+        luacon_sim->grav->start_grav_async();
     else
-        stop_grav_async();
-    ngrav_enable = (gravstate==0?0:1);*/
-	//TODO IMPLEMENT
+        luacon_sim->grav->stop_grav_async();
     return 0;
 }
 int luatpt_airheat(lua_State* l)
@@ -1934,7 +1964,7 @@ int luatpt_heat(lua_State* l)
 int luatpt_cmode_set(lua_State* l)
 {
 	//TODO IMPLEMENT
-    return luaL_error(l, "Not implemented");
+    return luaL_error(l, "cmode_set: Deprecated");
 }
 int luatpt_setfire(lua_State* l)
 {
@@ -1945,11 +1975,7 @@ int luatpt_setfire(lua_State* l)
 }
 int luatpt_setdebug(lua_State* l)
 {
-	/*int debug = luaL_optint(l, 1, 0);
-	debug_flags = debug;
-	return 0;*/
-	//TODO IMPLEMENT
-	return luaL_error(l, "Not implemented");
+	return luaL_error(l, "setdebug: Deprecated");
 }
 int luatpt_setfpscap(lua_State* l)
 {
@@ -2051,32 +2077,30 @@ fin:
 
 int luatpt_setwindowsize(lua_State* l)
 {
-	/*int result, scale = luaL_optint(l,1,1), kiosk = luaL_optint(l,2,0);
+	int scale = luaL_optint(l,1,1), kiosk = luaL_optint(l,2,0);
 	if (scale!=2) scale = 1;
 	if (kiosk!=1) kiosk = 0;
-	result = set_scale(scale, kiosk);
-	lua_pushnumber(l, result);
-	return 1;*/
-	//TODO Implement
-	return luaL_error(l, "Not implemented");
+	ui::Engine::Ref().SetScale(scale);
+	ui::Engine::Ref().SetFullscreen(kiosk);
+	return 0;
 }
 
 int luatpt_screenshot(lua_State* l)
 {
 	//TODO Implement
-	/*int captureUI = luaL_optint(l, 1, 0);
-	if(vid_buf)
+	int captureUI = luaL_optint(l, 1, 0);
+	std::vector<char> data;
+	if(captureUI)
 	{
-		if(captureUI)
-		{
-			dump_frame(vid_buf, XRES+BARSIZE, YRES+MENUSIZE, XRES+BARSIZE);
-		}
-		else
-		{
-			dump_frame(vid_buf, XRES, YRES, XRES+BARSIZE);
-		}
-		return 0;
-	}*/
-	return luaL_error(l, "Not implemented");
+		VideoBuffer screenshot(ui::Engine::Ref().g->DumpFrame());
+		data = format::VideoBufferToPNG(screenshot);
+	}
+	else
+	{
+		VideoBuffer screenshot(luacon_ren->DumpFrame());
+		data = format::VideoBufferToPNG(screenshot);
+	}
+	Client::Ref().WriteFile(data, "screenshot.png");
+	return 0;
 }
 

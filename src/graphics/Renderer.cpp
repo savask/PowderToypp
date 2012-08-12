@@ -31,9 +31,6 @@ extern "C"
 #define VIDYRES YRES
 #endif
 
-#ifdef OGLR
-#define drawrect(args) g->drawrect(args)
-#endif
 
 void Renderer::RenderBegin()
 {
@@ -2473,6 +2470,23 @@ void Renderer::SetColourMode(unsigned int mode)
 unsigned int Renderer::GetColourMode()
 {
 	return colour_mode;
+}
+
+VideoBuffer Renderer::DumpFrame()
+{
+#ifdef OGLR
+#elif defined(OGLI) 
+	VideoBuffer newBuffer(XRES, YRES);
+	std::copy(vid, vid+(XRES*YRES), newBuffer.Buffer);
+	return newBuffer;
+#else
+	VideoBuffer newBuffer(XRES, YRES);
+	for(int y = 0; y < YRES; y++)
+	{
+		std::copy(vid+(y*(XRES+BARSIZE)), vid+(y*(XRES+BARSIZE))+XRES, newBuffer.Buffer+(y*XRES));
+	}
+	return newBuffer;
+#endif
 }
 
 Renderer::~Renderer()
