@@ -8,7 +8,6 @@
 
 #include "Config.h"
 #include "client/Client.h"
-#include "simulation/Simulation.h"
 #include "Graphics.h"
 #include "interface/Point.h"
 
@@ -85,6 +84,7 @@ public:
 	void checkShader(GLuint shader, char * shname);
 	void checkProgram(GLuint program, char * progname);
 	void loadShaders();
+	GLuint vidBuf,textTexture;
 #endif
 	pixel * vid;
 	pixel * persistentVid;

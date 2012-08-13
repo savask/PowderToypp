@@ -7,14 +7,17 @@
 
 #ifndef SAVERENDERER_H_
 #define SAVERENDERER_H_
-
+#ifdef OGLI
+#include "graphics/OpenGLHeaders.h" 
+#endif
 #include "Singleton.h"
-#include "search/Thumbnail.h"
-#include "client/GameSave.h"
 
+class GameSave;
+class Thumbnail;
 class Graphics;
 class Simulation;
 class Renderer;
+
 class SaveRenderer: public Singleton<SaveRenderer> {
 	Graphics * g;
 	Simulation * sim;
