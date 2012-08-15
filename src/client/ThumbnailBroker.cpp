@@ -124,9 +124,16 @@ void ThumbnailBroker::FlushThumbQueue()
 	while(thumbnailComplete.size())
 	{
 		if(CheckThumbnailListener(thumbnailComplete.front().first))
+		{
 			thumbnailComplete.front().first->OnThumbnailReady(thumbnailComplete.front().second);
+		}
 		else
+		{
+#ifdef DEBUG
+			std::cout << typeid(*this).name() << " Listener lost, discarding request" << std::endl;
+#endif
 			delete thumbnailComplete.front().second;
+		}
 		thumbnailComplete.pop_front();
 	}	
 	pthread_mutex_unlock(&thumbnailQueueMutex);
@@ -215,7 +222,7 @@ void ThumbnailBroker::thumbnailQueueProcessTH()
 					pthread_mutex_unlock(&thumbnailQueueMutex);	
 				}
 			}
-			else if(!thumbnail)
+			else
 			{
 				//Check for ongoing requests
 				bool requested = false;
@@ -225,6 +232,10 @@ void ThumbnailBroker::thumbnailQueueProcessTH()
 					{
 						requested = true;
 						
+#ifdef DEBUG
+						std::cout << typeid(*this).name() << " Request for " << req.ID.SaveID << ":" << req.ID.SaveDate << " found, appending." << std::endl;
+#endif
+
 						//Add the current listener to the item already being requested
 						(*iter).SubRequests.push_back(req.SubRequests.front());
 					}
@@ -242,24 +253,21 @@ void ThumbnailBroker::thumbnailQueueProcessTH()
 					pthread_mutex_unlock(&thumbnailQueueMutex);
 
 					//If it's not already being requested, request it
-					if(!requested && CheckThumbnailListener(req.SubRequests.front().CompletedListener))
+					std::stringstream urlStream;
+					urlStream << "http://" << STATICSERVER << "/" << req.ID.SaveID;
+					if(req.ID.SaveDate)
 					{
-						std::stringstream urlStream;
-						urlStream << "http://" << STATICSERVER << "/" << req.ID.SaveID;
-						if(req.ID.SaveDate)
-						{
-							urlStream << "_" << req.ID.SaveDate;
-						}
-						urlStream << "_small.pti";
+						urlStream << "_" << req.ID.SaveDate;
+					}
+					urlStream << "_small.pti";
 
 #ifdef DEBUG
-						std::cout << typeid(*this).name() << " Creating new request for " << req.ID.SaveID << ":" << req.ID.SaveDate << std::endl;
+					std::cout << typeid(*this).name() << " Creating new request for " << req.ID.SaveID << ":" << req.ID.SaveDate << std::endl;
 #endif
 
-						req.HTTPContext = http_async_req_start(NULL, (char *)urlStream.str().c_str(), NULL, 0, 1);
-						req.RequestTime = time(NULL);
-						currentRequests.push_back(req);
-					}
+					req.HTTPContext = http_async_req_start(NULL, (char *)urlStream.str().c_str(), NULL, 0, 1);
+					req.RequestTime = time(NULL);
+					currentRequests.push_back(req);
 				}
 				else
 				{
@@ -275,7 +283,6 @@ void ThumbnailBroker::thumbnailQueueProcessTH()
 		}
 
 		std::list<ThumbnailRequest>::iterator iter = currentRequests.begin();
-		std::list<ThumbnailRequest>::iterator end = currentRequests.end();
 		while (iter != currentRequests.end())
 		{
 			lastAction = time(NULL);
@@ -304,8 +311,11 @@ void ThumbnailBroker::thumbnailQueueProcessTH()
 					}
 					else
 					{
-						thumbnail = new Thumbnail(req.ID.SaveID, req.ID.SaveID, thumbData, ui::Point(128, 128));
-						free(thumbData);
+						//Error thumbnail
+						VideoBuffer errorThumb(128, 128);
+						errorThumb.SetCharacter(64, 64, 'x', 255, 255, 255, 255);
+
+						thumbnail = new Thumbnail(req.ID.SaveID, req.ID.SaveID, errorThumb.Buffer, ui::Point(errorThumb.Width, errorThumb.Height));
 					}
 
 					if(thumbnailCache.size() >= THUMB_CACHE_SIZE)
@@ -368,6 +378,15 @@ void ThumbnailBroker::AttachThumbnailListener(ThumbnailListener * tListener)
 void ThumbnailBroker::DetachThumbnailListener(ThumbnailListener * tListener)
 {
 	pthread_mutex_lock(&listenersMutex);
-	std::remove(validListeners.begin(), validListeners.end(), tListener);
+
+	std::vector<ThumbnailListener*>::iterator iter = validListeners.begin();
+	while (iter != validListeners.end())
+	{
+		if(*iter == tListener)
+			iter = validListeners.erase(iter);
+		else
+			++iter;
+	}
+
 	pthread_mutex_unlock(&listenersMutex);
 }

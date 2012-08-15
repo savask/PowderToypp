@@ -15,6 +15,7 @@
 #include "ToolButton.h"
 #include "RenderPreset.h"
 #include "Brush.h"
+#include "simulation/Sample.h"
 
 using namespace std;
 
@@ -25,7 +26,7 @@ enum DrawMode
 
 enum SelectMode
 {
-	SelectNone, SelectStamp, SelectCopy, PlaceSave
+	SelectNone, SelectStamp, SelectCopy, SelectCut, PlaceSave
 };
 
 class GameController;
@@ -45,6 +46,8 @@ private:
 	bool showDebug;
 	bool wallBrush;
 	int introText;
+	int buttonTipShow;
+	std::string buttonTip;
 	std::string introTextMessage;
 	int toolIndex;
 

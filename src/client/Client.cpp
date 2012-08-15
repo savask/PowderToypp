@@ -83,9 +83,9 @@ Client::Client():
 		configFile.seekg(0, std::ios::beg);
 		if(fsize)
 		{
-			json::Reader::Read(configDocument, configFile);
 			try
 			{
+				json::Reader::Read(configDocument, configFile);
 				authUser.ID = ((json::Number)(configDocument["User"]["ID"])).Value();
 				authUser.SessionID = ((json::String)(configDocument["User"]["SessionID"])).Value();
 				authUser.SessionKey = ((json::String)(configDocument["User"]["SessionKey"])).Value();
@@ -102,7 +102,7 @@ Client::Client():
 			catch (json::Exception &e)
 			{
 				authUser = User(0, "");
-				std::cerr << "Error: Client [Read User data from pref] " << e.what() << std::endl;
+				std::cerr << "Error: Could not read data from prefs: " << e.what() << std::endl;
 			}
 		}
 		configFile.close();
@@ -283,6 +283,25 @@ bool Client::DoInstallation()
 	fwrite(mimedata, 1, strlen(mimedata), f);
 	fclose(f);
 
+	char *protocolfiledata_tmp =
+"[Desktop Entry]\n"
+"Type=Application\n"
+"Name=Powder Toy\n"
+"Comment=Physics sandbox game\n"
+"MimeType=x-scheme-handler/ptsave;\n"
+"NoDisplay=true\n";
+	char *protocolfiledata = (char *)malloc(strlen(protocolfiledata_tmp)+strlen(currentfilename)+100);
+	strcpy(protocolfiledata, protocolfiledata_tmp);
+	strappend(protocolfiledata, "Exec=");
+	strappend(protocolfiledata, currentfilename);
+	strappend(protocolfiledata, " ptsave %u\n");
+	f = fopen("powdertoy-tpt-ptsave.desktop", "wb");
+	if (!f)
+		return 0;
+	fwrite(protocolfiledata, 1, strlen(protocolfiledata), f);
+	fclose(f);
+	system("xdg-desktop-menu install powdertoy-tpt-ptsave.desktop");
+
 	char *desktopfiledata_tmp =
 "[Desktop Entry]\n"
 "Type=Application\n"
@@ -316,10 +335,12 @@ bool Client::DoInstallation()
 	system("xdg-icon-resource install --noupdate --context mimetypes --size 16 powdertoy-save-16.png application-vnd.powdertoy.save");
 	system("xdg-icon-resource forceupdate");
 	system("xdg-mime default powdertoy-tpt.desktop application/vnd.powdertoy.save");
+	system("xdg-mime default powdertoy-tpt-ptsave.desktop x-scheme-handler/ptsave");
 	unlink("powdertoy-save-32.png");
 	unlink("powdertoy-save-16.png");
 	unlink("powdertoy-save.xml");
 	unlink("powdertoy-tpt.desktop");
+	unlink("powdertoy-tpt-ptsave.desktop");
 	return true;
 #elif defined MACOSX
 	return false;
@@ -906,24 +927,18 @@ RequestStatus Client::ExecVote(int saveID, int direction)
 	int dataLength = 0;
 	std::stringstream idStream;
 	idStream << saveID;
-	std::string directionS;
-	if(direction==1)
-	{
-		directionS = "Up";
-	}
-	else
-	{
-		directionS = "Down";
-	}
-	std::stringstream userIDStream;
-	userIDStream << authUser.ID;
+
+	std::string saveIDText = format::NumberToString<int>(saveID);
+	std::string directionText = direction==1?"Up":"Down";
+
+	std::string userIDText = format::NumberToString<int>(authUser.ID);
 	if(authUser.ID)
 	{
 		char * postNames[] = { "ID", "Action", NULL };
-		char * postDatas[] = { (char*)(idStream.str().c_str()), (char*)(directionS.c_str()) };
-		int postLengths[] = { idStream.str().length(), directionS.length() };
+		char * postDatas[] = { (char*)(saveIDText.c_str()), (char*)(directionText.c_str()) };
+		int postLengths[] = { saveIDText.length(), directionText.length() };
 		//std::cout << postNames[0] << " " << postDatas[0] << " " << postLengths[0] << std::endl;
-		data = http_multipart_post("http://" SERVER "/Vote.api", postNames, postDatas, postLengths, (char *)(userIDStream.str().c_str()), NULL, (char *)(authUser.SessionID.c_str()), &dataStatus, &dataLength);
+		data = http_multipart_post("http://" SERVER "/Vote.api", postNames, postDatas, postLengths, (char *)(userIDText.c_str()), NULL, (char *)(authUser.SessionID.c_str()), &dataStatus, &dataLength);
 	}
 	else
 	{
@@ -1492,7 +1507,7 @@ std::vector<SaveComment*> * Client::GetComments(int saveID, int start, int count
 			for(int j = 0; j < commentsArray.Size(); j++)
 			{
 				json::Number tempUserID = commentsArray[j]["UserID"];
-				json::String tempUsername = commentsArray[j]["Username"];
+				json::String tempUsername = commentsArray[j]["FormattedUsername"];
 				json::String tempComment = commentsArray[j]["Text"];
 				commentArray->push_back(
 							new SaveComment(

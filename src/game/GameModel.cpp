@@ -3,12 +3,14 @@
 #include "GameView.h"
 #include "simulation/Simulation.h"
 #include "simulation/Air.h"
+#include "simulation/Tools.h"
 #include "graphics/Renderer.h"
 #include "interface/Point.h"
 #include "Brush.h"
 #include "EllipseBrush.h"
 #include "TriangleBrush.h"
 #include "client/Client.h"
+#include "client/GameSave.h"
 #include "game/DecorationTool.h"
 #include "GameModelException.h"
 #include "QuickOptions.h"
@@ -260,6 +262,10 @@ void GameModel::SetVote(int direction)
 		{
 			currentSave->vote = direction;
 			notifySaveChanged();
+		}
+		else
+		{
+			throw GameModelException("Could not vote: "+Client::Ref().GetLastError());
 		}
 	}
 }

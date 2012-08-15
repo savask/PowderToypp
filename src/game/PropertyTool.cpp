@@ -23,6 +23,7 @@ public:
 	PropertyWindow(PropertyTool * tool_, Simulation * sim_, ui::Point position_);
 	void SetProperty();
 	virtual void OnDraw();
+	virtual void OnTryExit(ExitMethod method);
 	virtual ~PropertyWindow() {}
 	class OkayAction: public ui::ButtonAction
 	{
@@ -59,6 +60,7 @@ position(position_)
 	okayButton->Appearance.BorderInactive = ui::Colour(200, 200, 200);
 	okayButton->SetActionCallback(new OkayAction(this));
 	AddComponent(okayButton);
+	SetOkayButton(okayButton);
 	
 	property = new ui::DropDown(ui::Point(8, 25), ui::Point(Size.X-16, 17));
 	AddComponent(property);
@@ -92,14 +94,16 @@ void PropertyWindow::SetProperty()
 					if(value.length() > 2 && value.substr(0, 2) == "0x")
 					{
 						//0xC0FFEE
-						stringstream buffer;
+						std::stringstream buffer;
+						buffer.exceptions(std::stringstream::failbit | std::stringstream::badbit);
 						buffer << std::hex << value.substr(2);
 						buffer >> tempInt;
 					}
 					else if(value.length() > 1 && value[0] == '#')
 					{
 						//#C0FFEE
-						stringstream buffer;
+						std::stringstream buffer;
+						buffer.exceptions(std::stringstream::failbit | std::stringstream::badbit);
 						buffer << std::hex << value.substr(1);
 						buffer >> tempInt;
 					}
@@ -117,12 +121,16 @@ void PropertyWindow::SetProperty()
 							}
 							else
 							{
-								stringstream(value) >> tempInt;
+								std::stringstream buffer(value);
+								buffer.exceptions(std::stringstream::failbit | std::stringstream::badbit);
+								buffer >> tempInt;
 							}
 						}
 						else
 						{
-							stringstream(value) >> tempInt;
+							std::stringstream buffer(value);
+							buffer.exceptions(std::stringstream::failbit | std::stringstream::badbit);
+							buffer >> tempInt;
 						}
 					}
 #ifdef DEBUG
@@ -134,20 +142,24 @@ void PropertyWindow::SetProperty()
 					if(value.length() > 2 && value.substr(0, 2) == "0x")
 					{
 						//0xC0FFEE
-						stringstream buffer;
+						std::stringstream buffer;
+						buffer.exceptions(std::stringstream::failbit | std::stringstream::badbit);
 						buffer << std::hex << value.substr(2);
 						buffer >> tempUInt;
 					}
 					else if(value.length() > 1 && value[0] == '#')
 					{
 						//#C0FFEE
-						stringstream buffer;
+						std::stringstream buffer;
+						buffer.exceptions(std::stringstream::failbit | std::stringstream::badbit);
 						buffer << std::hex << value.substr(1);
 						buffer >> tempUInt;
 					}
 					else 
 					{
-						stringstream(value) >> tempUInt;
+						std::stringstream buffer(value);
+						buffer.exceptions(std::stringstream::failbit | std::stringstream::badbit);
+						buffer >> tempUInt;
 					}
 #ifdef DEBUG
 					std::cout << "Got uint value " << tempUInt << std::endl;
@@ -155,11 +167,15 @@ void PropertyWindow::SetProperty()
 					propValue = &tempUInt;
 					break;
 				case StructProperty::Float:
-					istringstream(value) >> tempFloat;
+				{
+					std::stringstream buffer(value);
+					buffer.exceptions(std::stringstream::failbit | std::stringstream::badbit);
+					buffer >> tempFloat;
 #ifdef DEBUG
 					std::cout << "Got float value " << tempFloat << std::endl;
 #endif
 					propValue = &tempFloat;
+				}
 					break;
 				default:
 					new ErrorMessage("Could not set property", "Invalid property");
@@ -175,6 +191,12 @@ void PropertyWindow::SetProperty()
 			new ErrorMessage("Could not set property", "Invalid value provided");
 		}
 	}
+}
+
+void PropertyWindow::OnTryExit(ExitMethod method)
+{
+	ui::Engine::Ref().CloseWindow();
+	SelfDestruct();
 }
 
 void PropertyWindow::OnDraw()

@@ -6,6 +6,7 @@
 #include "GameController.h"
 #include "GameModel.h"
 #include "client/SaveInfo.h"
+#include "client/GameSave.h"
 #include "search/SearchController.h"
 #include "render/RenderController.h"
 #include "login/LoginController.h"
@@ -429,6 +430,12 @@ void GameController::CopyRegion(ui::Point point1, ui::Point point2)
 	newSave = gameModel->GetSimulation()->Save(point1.X, point1.Y, point2.X, point2.Y);
 	if(newSave)
 		gameModel->SetClipboard(newSave);
+}
+
+void GameController::CutRegion(ui::Point point1, ui::Point point2)
+{
+	CopyRegion(point1, point2);
+	gameModel->GetSimulation()->clear_area(point1.X, point1.Y, point2.X-point1.X, point2.Y-point1.Y);
 }
 
 bool GameController::MouseMove(int x, int y, int dx, int dy)
@@ -1027,7 +1034,16 @@ void GameController::FrameStep()
 void GameController::Vote(int direction)
 {
 	if(gameModel->GetSave() && gameModel->GetUser().ID && gameModel->GetSave()->GetID() && gameModel->GetSave()->GetVote()==0)
-		gameModel->SetVote(direction);
+	{
+		try
+		{
+			gameModel->SetVote(direction);
+		}
+		catch(GameModelException & ex)
+		{
+			new ErrorMessage("Error while voting", ex.what());
+		}
+	}
 }
 
 void GameController::ChangeBrush()
