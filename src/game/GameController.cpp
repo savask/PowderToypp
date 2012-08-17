@@ -23,6 +23,7 @@
 #include "save/LocalSaveActivity.h"
 #include "save/ServerSaveActivity.h"
 #include "interface/Keys.h"
+#include "simulation/Snapshot.h"
 
 using namespace std;
 
@@ -187,6 +188,40 @@ GameController::~GameController()
 	delete gameView;
 }
 
+void GameController::HistoryRestore()
+{
+	std::deque<Snapshot*> history = gameModel->GetHistory();
+	if(history.size())
+	{
+		Snapshot * snap = history.back();
+		gameModel->GetSimulation()->Restore(*snap);
+		if(history.size()>1)
+		{
+			history.pop_back();
+			delete snap;
+			gameModel->SetHistory(history);
+		}
+	}
+}
+
+void GameController::HistorySnapshot()
+{
+	std::deque<Snapshot*> history = gameModel->GetHistory();
+	Snapshot * newSnap = gameModel->GetSimulation()->CreateSnapshot();
+	if(newSnap)
+	{
+		if(history.size() >= 1) //History limit is current 1
+		{
+			Snapshot * snap = history.front();
+			history.pop_front();
+			//snap->Particles.clear();
+			delete snap;
+		}
+		history.push_back(newSnap);
+		gameModel->SetHistory(history);
+	}
+}
+
 GameView * GameController::GetView()
 {
 	return gameView;
@@ -230,6 +265,20 @@ void GameController::Install()
 	new ErrorMessage("Cannot install", "You cannot install The Powder Toy on this platform");
 #endif
 }
+
+void GameController::AdjustGridSize(int direction)
+{
+	if(direction > 0)
+		gameModel->GetRenderer()->SetGridSize((gameModel->GetRenderer()->GetGridSize()+1)%10);
+	else
+		gameModel->GetRenderer()->SetGridSize((gameModel->GetRenderer()->GetGridSize()+9)%10);
+}
+
+void GameController::InvertAirSim()
+{
+	gameModel->GetSimulation()->air->Invert();
+}
+
 
 void GameController::AdjustBrushSize(int direction, bool logarithmic, bool xAxis, bool yAxis)
 {

@@ -984,6 +984,8 @@ void GameView::OnMouseDown(int x, int y, unsigned button)
 		if(button == BUTTON_MIDDLE)
 			toolIndex = 2;
 		isMouseDown = true;
+		if(!pointQueue.size())
+			c->HistorySnapshot();
 		if(drawMode == DrawRect || drawMode == DrawLine)
 		{
 			drawPoint1 = ui::Point(x, y);
@@ -1230,9 +1232,16 @@ void GameView::OnKeyPress(int key, Uint16 character, bool shift, bool ctrl, bool
 		c->ChangeBrush();
 		break;
 	case 'z':
-		isMouseDown = false;
-		zoomCursorFixed = false;
-		c->SetZoomEnabled(true);
+		if(ctrl)
+		{
+			c->HistoryRestore();
+		}
+		else
+		{
+			isMouseDown = false;
+			zoomCursorFixed = false;
+			c->SetZoomEnabled(true);
+		}
 		break;
 	case '`':
 		c->ShowConsole();
@@ -1242,6 +1251,12 @@ void GameView::OnKeyPress(int key, Uint16 character, bool shift, bool ctrl, bool
 		break;
 	case 'f':
 		c->FrameStep();
+		break;
+	case 'g':
+		if(shift)
+			c->AdjustGridSize(-1);
+		else
+			c->AdjustGridSize(1);
 		break;
 	case 'd':
 		showDebug = !showDebug;
@@ -1345,6 +1360,8 @@ void GameView::OnKeyPress(int key, Uint16 character, bool shift, bool ctrl, bool
 	case 'i':
 		if(ctrl)
 			c->Install();
+		else
+			c->InvertAirSim();
 		break;
 	}
 
@@ -1376,8 +1393,11 @@ void GameView::OnKeyRelease(int key, Uint16 character, bool shift, bool ctrl, bo
 		disableShiftBehaviour();
 		break;
 	case 'z':
-		if(!zoomCursorFixed && !alt)
-			c->SetZoomEnabled(false);
+		if(!ctrl)
+		{
+			if(!zoomCursorFixed && !alt)
+				c->SetZoomEnabled(false);
+		}
 		break;
 	}
 }

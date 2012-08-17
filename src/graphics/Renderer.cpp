@@ -34,7 +34,20 @@ extern "C"
 
 void Renderer::RenderBegin()
 {
-#ifndef OGLR
+#ifdef OGLI
+#ifdef OGLR
+	draw_air();
+	draw_grav();
+	render_parts();
+	render_fire();
+	DrawWalls();
+	draw_grav_zones();
+	DrawSigns();
+
+	glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFbo);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, partsFbo);
+	glTranslated(0, MENUSIZE, 0);
+#else
 	if(display_mode & DISPLAY_PERS)
 	{
 		std::copy(persistentVid, persistentVid+(VIDXRES*YRES), vid);
@@ -46,12 +59,12 @@ void Renderer::RenderBegin()
 		vid = warpVid;
 		std::fill(warpVid, warpVid+(VIDXRES*VIDYRES), 0);
 	}
-#endif
+
 	draw_air();
 	draw_grav();
 	render_parts();
 	render_fire();
-#ifndef OGLR
+
 	if(display_mode & DISPLAY_PERS)
 	{
 		int i,r,g,b;
@@ -69,26 +82,77 @@ void Renderer::RenderBegin()
 			persistentVid[i] = PIXRGB(r,g,b);
 		}
 	}
-#endif
+
 	DrawWalls();
 	draw_grav_zones();
 	DrawSigns();
-#ifndef OGLR
 	if(display_mode & DISPLAY_WARP)
 	{
 		vid = oldVid;
 	}
 #endif
-#ifndef OGLI
+#else
+	if(display_mode & DISPLAY_PERS)
+	{
+		std::copy(persistentVid, persistentVid+(VIDXRES*YRES), vid);
+	}
+	pixel * oldVid;
+	if(display_mode & DISPLAY_WARP)
+	{
+		oldVid = vid;
+		vid = warpVid;
+		std::fill(warpVid, warpVid+(VIDXRES*VIDYRES), 0);
+	}
+
+	draw_air();
+	draw_grav();
+	render_parts();
+	render_fire();
+	if(display_mode & DISPLAY_PERS)
+	{
+		int i,r,g,b;
+		for (i = 0; i < VIDXRES*YRES; i++)
+		{
+			r = PIXR(vid[i]);
+			g = PIXG(vid[i]);
+			b = PIXB(vid[i]);
+			if (r>0)
+				r--;
+			if (g>0)
+				g--;
+			if (b>0)
+				b--;
+			persistentVid[i] = PIXRGB(r,g,b);
+		}
+	}
+
+	DrawWalls();
+	draw_grav_zones();
+	DrawSigns();
+
+	if(display_mode & DISPLAY_WARP)
+	{
+		vid = oldVid;
+	}
+
 	FinaliseParts();
 #endif
 }
 
 void Renderer::RenderEnd()
 {
-	RenderZoom();
 #ifdef OGLI
+#ifdef OGLR
+	glTranslated(0, -MENUSIZE, 0);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, prevFbo);
 	FinaliseParts();
+	RenderZoom();
+#else
+	RenderZoom();
+	FinaliseParts();
+#endif
+#else
+	RenderZoom();
 #endif
 }
 
@@ -576,6 +640,12 @@ VideoBuffer * Renderer::WallIcon(int wallID, int width, int height)
 
 void Renderer::DrawWalls()
 {
+#ifdef OGLR
+	GLint prevFbo;
+	glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFbo);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, partsFbo);
+	glTranslated(0, MENUSIZE, 0);
+
 	int x, y, i, j, cr, cg, cb;
 	unsigned char wt;
 	pixel pc;
@@ -592,13 +662,33 @@ void Renderer::DrawWalls()
 					continue;
 				pc = wtypes[wt].colour;
 				gc = wtypes[wt].eglow;
-#ifdef OGLR
-				int r = PIXR(pc);
-				int g = PIXG(pc);
-				int b = PIXB(pc);
-				int a = 255;
-#endif
-#ifndef OGLR
+
+				cr = PIXR(pc);
+				cg = PIXG(pc);
+				cb = PIXB(pc);
+
+				fillrect(x*CELL, y*CELL, CELL, CELL, cr, cg, cb, 255);
+			}
+
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, prevFbo);
+	glTranslated(0, -MENUSIZE, 0);
+#else
+	int x, y, i, j, cr, cg, cb;
+	unsigned char wt;
+	pixel pc;
+	pixel gc;
+	unsigned char (*bmap)[XRES/CELL] = sim->bmap;
+	unsigned char (*emap)[XRES/CELL] = sim->emap;
+	wall_type *wtypes = sim->wtypes;
+	for (y=0; y<YRES/CELL; y++)
+		for (x=0; x<XRES/CELL; x++)
+			if (bmap[y][x])
+			{
+				wt = bmap[y][x];
+				if (wt<0 || wt>=UI_WALLCOUNT)
+					continue;
+				pc = wtypes[wt].colour;
+				gc = wtypes[wt].eglow;
 
 				// standard wall patterns
 				if (wtypes[wt].drawstyle==1)
@@ -714,10 +804,8 @@ void Renderer::DrawWalls()
 					fire_b[y][x] = cb;
 
 				}
-#else
-				this->fillrect(x*CELL, y*CELL, CELL, CELL, r, g, b, a);
-#endif
 			}
+#endif
 }
 
 void Renderer::DrawSigns()
@@ -998,17 +1086,17 @@ void Renderer::render_parts()
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, partsFbo);
 	glTranslated(0, MENUSIZE, 0);
 #else
-	/*if (GRID_MODE)//draws the grid
+	if (gridSize)//draws the grid
 	{
 		for (ny=0; ny<YRES; ny++)
 			for (nx=0; nx<XRES; nx++)
 			{
-				if (ny%(4*GRID_MODE)==0)
+				if (ny%(4*gridSize)==0)
 					blendpixel(nx, ny, 100, 100, 100, 80);
-				if (nx%(4*GRID_MODE)==0)
+				if (nx%(4*gridSize)==0)
 					blendpixel(nx, ny, 100, 100, 100, 80);
 			}
-	}*/
+	}
 #endif
 	for(i = 0; i<=sim->parts_lastActiveIndex; i++) {
 		if (sim->parts[i].type) {
@@ -2196,7 +2284,8 @@ Renderer::Renderer(Graphics * g, Simulation * sim):
 	mousePosY(-1),
 	display_mode(0),
 	render_mode(0),
-	colour_mode(0)
+	colour_mode(0),
+	gridSize(0)
 {
 	this->g = g;
 	this->sim = sim;
@@ -2359,6 +2448,19 @@ Renderer::Renderer(Graphics * g, Simulation * sim):
 	glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);
 
+	glBindTexture(GL_TEXTURE_2D, 0);
+	glDisable(GL_TEXTURE_2D);
+
+	//Temptexture
+	glEnable(GL_TEXTURE_2D);
+	glGenTextures(1, &textTexture);
+	glBindTexture(GL_TEXTURE_2D, textTexture);
+	
+	glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	
 	glBindTexture(GL_TEXTURE_2D, 0);
 	glDisable(GL_TEXTURE_2D);
 
