@@ -35,7 +35,10 @@ namespace ui
 
 		void Begin(int width, int height);
 		inline bool Running() { return running_; }
+		inline bool Broken() { return break_; } 
 		void Exit();
+		void Break();
+		void UnBreak();
 
 		void SetFullscreen(bool fullscreen) { Fullscreen = fullscreen; }
 		inline bool GetFullscreen() { return Fullscreen; }
@@ -76,6 +79,7 @@ namespace ui
 		float windowOpenState;
 
 		bool running_;
+		bool break_;
 		
 		int mousex_;
 		int mousey_;

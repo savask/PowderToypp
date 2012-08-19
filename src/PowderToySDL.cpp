@@ -31,6 +31,7 @@
 #include "interface/Keys.h"
 
 #include "client/GameSave.h"
+#include "client/SaveFile.h"
 #include "simulation/SaveRenderer.h"
 #include "client/Client.h"
 #include "Misc.h"
@@ -283,11 +284,143 @@ std::map<std::string, std::string> readArguments(int argc, char * argv[])
 	return arguments;
 }
 
+int elapsedTime = 0, currentTime = 0, lastTime = 0, currentFrame = 0;
+unsigned int lastTick = 0;
+float fps = 0, delta = 1.0f, inputScale = 1.0f;
+ui::Engine * engine = NULL;
+
+void EngineProcess()
+{
+	SDL_Event event;
+	while(engine->Running())
+	{
+		if(engine->Broken())
+		{
+			engine->UnBreak();
+			break;
+		}
+		event.type = 0;
+		while (SDL_PollEvent(&event))
+		{
+			switch (event.type)
+			{
+			case SDL_QUIT:
+				engine->Exit();
+				break;
+			case SDL_KEYDOWN:
+				engine->onKeyPress(event.key.keysym.sym, event.key.keysym.unicode, event.key.keysym.mod&KEY_MOD_LSHIFT, event.key.keysym.mod&KEY_MOD_LCONTROL, event.key.keysym.mod&KEY_MOD_LALT);
+				break;
+			case SDL_KEYUP:
+				engine->onKeyRelease(event.key.keysym.sym, event.key.keysym.unicode, event.key.keysym.mod&KEY_MOD_LSHIFT, event.key.keysym.mod&KEY_MOD_LCONTROL, event.key.keysym.mod&KEY_MOD_LALT);
+				break;
+			case SDL_MOUSEMOTION:
+				engine->onMouseMove(event.motion.x*inputScale, event.motion.y*inputScale);
+				break;
+			case SDL_MOUSEBUTTONDOWN:
+				if(event.button.button == SDL_BUTTON_WHEELUP)
+				{
+					engine->onMouseWheel(event.motion.x*inputScale, event.motion.y*inputScale, 1);
+				}
+				else if (event.button.button == SDL_BUTTON_WHEELDOWN)
+				{
+					engine->onMouseWheel(event.motion.x*inputScale, event.motion.y*inputScale, -1);
+				}
+				else
+				{
+					engine->onMouseClick(event.motion.x*inputScale, event.motion.y*inputScale, event.button.button);
+				}
+				break;
+			case SDL_MOUSEBUTTONUP:
+				if(event.button.button != SDL_BUTTON_WHEELUP && event.button.button != SDL_BUTTON_WHEELDOWN)
+					engine->onMouseUnclick(event.motion.x*inputScale, event.motion.y*inputScale, event.button.button);
+				break;
+#ifdef OGLI
+			case SDL_VIDEORESIZE:
+				float ratio = float(XRES+BARSIZE) / float(YRES+MENUSIZE);
+				float width = event.resize.w;
+				float height = width/ratio;
+
+				sdl_scrn = SDL_SetVideoMode(event.resize.w, height, 32, SDL_OPENGL | SDL_RESIZABLE);
+
+				glViewport(0, 0, width, height);
+				engine->g->Reset();
+				//glScaled(width/currentWidth, height/currentHeight, 1.0f);
+
+				currentWidth = width;
+				currentHeight = height;
+				inputScale = float(XRES+BARSIZE)/currentWidth;
+
+				glLineWidth(currentWidth/float(XRES+BARSIZE));
+				if(sdl_scrn == NULL)
+				{
+					std::cerr << "Oh bugger" << std::endl;
+				}
+				break;
+#endif
+			}
+			event.type = 0; //Clear last event
+		}
+
+		engine->Tick();
+		engine->Draw();
+		
+		if(SDL_GetTicks()-lastTick>250)
+		{
+			//Run client tick every second
+			lastTick = SDL_GetTicks();
+			Client::Ref().Tick();
+		}
+
+		if(scale != engine->Scale || fullscreen != engine->Fullscreen)
+		{
+			sdl_scrn = SDLSetScreen(engine->Scale, engine->Fullscreen);
+			inputScale = 1.0f/float(scale);
+		}
+
+#ifdef OGLI
+		blit();
+#else
+		if(engine->Scale==2)
+			blit2(engine->g->vid, engine->Scale);
+		else
+			blit(engine->g->vid);
+#endif
+
+		currentFrame++;
+		currentTime = SDL_GetTicks();
+		elapsedTime = currentTime - lastTime;
+		if(ui::Engine::Ref().FpsLimit > 2.0f && (currentFrame>2 || elapsedTime > 1000*2/ui::Engine::Ref().FpsLimit) && elapsedTime && currentFrame*1000/elapsedTime > ui::Engine::Ref().FpsLimit)
+		{
+			while (currentFrame*1000/elapsedTime > ui::Engine::Ref().FpsLimit)
+			{
+				SDL_Delay(1);
+				currentTime = SDL_GetTicks();
+				elapsedTime = currentTime-lastTime;
+			}
+		}
+		if(elapsedTime>=1000)
+		{
+			fps = (((float)currentFrame)/((float)elapsedTime))*1000.0f;
+			currentFrame = 0;
+			lastTime = currentTime;
+			if(ui::Engine::Ref().FpsLimit > 2.0f)
+			{
+				delta = ui::Engine::Ref().FpsLimit/fps;
+			}
+			else
+			{
+				delta = 1.0f;
+			}
+		}
+		engine->SetFps(fps);
+	}
+#ifdef DEBUG
+	std::cout << "Breaking out of EngineProcess" << std::endl;
+#endif
+}
+
 int main(int argc, char * argv[])
 {
-	int elapsedTime = 0, currentTime = 0, lastTime = 0, currentFrame = 0;
-	unsigned int lastTick = 0;
-	float fps = 0, delta = 1.0f, inputScale = 1.0f;
 	float currentWidth = XRES+BARSIZE, currentHeight = YRES+MENUSIZE;
 
 	std::map<std::string, std::string> arguments = readArguments(argc, argv);
@@ -361,7 +494,7 @@ int main(int argc, char * argv[])
 	inputScale = 1.0f/float(scale);
 	ui::Engine::Ref().Fullscreen = fullscreen;
 
-	ui::Engine * engine = &ui::Engine::Ref();
+	engine = &ui::Engine::Ref();
 	engine->Begin(XRES+BARSIZE, YRES+MENUSIZE);
 
 	GameController * gameController = new GameController();
@@ -462,124 +595,8 @@ int main(int argc, char * argv[])
 		}
 	}
 
-	SDL_Event event;
-	while(engine->Running())
-	{
-		event.type = 0;
-		while (SDL_PollEvent(&event))
-		{
-			switch (event.type)
-			{
-			case SDL_QUIT:
-				engine->Exit();
-				break;
-			case SDL_KEYDOWN:
-				engine->onKeyPress(event.key.keysym.sym, event.key.keysym.unicode, event.key.keysym.mod&KEY_MOD_LSHIFT, event.key.keysym.mod&KEY_MOD_LCONTROL, event.key.keysym.mod&KEY_MOD_LALT);
-				break;
-			case SDL_KEYUP:
-				engine->onKeyRelease(event.key.keysym.sym, event.key.keysym.unicode, event.key.keysym.mod&KEY_MOD_LSHIFT, event.key.keysym.mod&KEY_MOD_LCONTROL, event.key.keysym.mod&KEY_MOD_LALT);
-				break;
-			case SDL_MOUSEMOTION:
-				engine->onMouseMove(event.motion.x*inputScale, event.motion.y*inputScale);
-				break;
-			case SDL_MOUSEBUTTONDOWN:
-				if(event.button.button == SDL_BUTTON_WHEELUP)
-				{
-					engine->onMouseWheel(event.motion.x*inputScale, event.motion.y*inputScale, 1);
-				}
-				else if (event.button.button == SDL_BUTTON_WHEELDOWN)
-				{
-					engine->onMouseWheel(event.motion.x*inputScale, event.motion.y*inputScale, -1);
-				}
-				else
-				{
-					engine->onMouseClick(event.motion.x*inputScale, event.motion.y*inputScale, event.button.button);
-				}
-				break;
-			case SDL_MOUSEBUTTONUP:
-				if(event.button.button != SDL_BUTTON_WHEELUP && event.button.button != SDL_BUTTON_WHEELDOWN)
-					engine->onMouseUnclick(event.motion.x*inputScale, event.motion.y*inputScale, event.button.button);
-				break;
-#ifdef OGLI
-			case SDL_VIDEORESIZE:
-				float ratio = float(XRES+BARSIZE) / float(YRES+MENUSIZE);
-				float width = event.resize.w;
-				float height = width/ratio;
-
-				sdl_scrn = SDL_SetVideoMode(event.resize.w, height, 32, SDL_OPENGL | SDL_RESIZABLE);
-
-				glViewport(0, 0, width, height);
-				engine->g->Reset();
-				//glScaled(width/currentWidth, height/currentHeight, 1.0f);
-
-				currentWidth = width;
-				currentHeight = height;
-				inputScale = float(XRES+BARSIZE)/currentWidth;
-
-				glLineWidth(currentWidth/float(XRES+BARSIZE));
-				if(sdl_scrn == NULL)
-				{
-					std::cerr << "Oh bugger" << std::endl;
-				}
-				break;
-#endif
-			}
-			event.type = 0; //Clear last event
-		}
-
-		engine->Tick();
-		engine->Draw();
-		
-		if(SDL_GetTicks()-lastTick>500)
-		{
-			//Run client tick every second
-			lastTick = SDL_GetTicks();
-			Client::Ref().Tick();
-		}
-
-		if(scale != engine->Scale || fullscreen != engine->Fullscreen)
-		{
-			sdl_scrn = SDLSetScreen(engine->Scale, engine->Fullscreen);
-			inputScale = 1.0f/float(scale);
-		}
-
-#ifdef OGLI
-		blit();
-#else
-		if(engine->Scale==2)
-			blit2(engine->g->vid, engine->Scale);
-		else
-			blit(engine->g->vid);
-#endif
-
-		currentFrame++;
-		currentTime = SDL_GetTicks();
-		elapsedTime = currentTime - lastTime;
-		if(ui::Engine::Ref().FpsLimit > 2.0f && (currentFrame>2 || elapsedTime > 1000*2/ui::Engine::Ref().FpsLimit) && elapsedTime && currentFrame*1000/elapsedTime > ui::Engine::Ref().FpsLimit)
-		{
-			while (currentFrame*1000/elapsedTime > ui::Engine::Ref().FpsLimit)
-			{
-				SDL_Delay(1);
-				currentTime = SDL_GetTicks();
-				elapsedTime = currentTime-lastTime;
-			}
-		}
-		if(elapsedTime>=1000)
-		{
-			fps = (((float)currentFrame)/((float)elapsedTime))*1000.0f;
-			currentFrame = 0;
-			lastTime = currentTime;
-			if(ui::Engine::Ref().FpsLimit > 2.0f)
-			{
-				delta = ui::Engine::Ref().FpsLimit/fps;
-			}
-			else
-			{
-				delta = 1.0f;
-			}
-		}
-		engine->SetFps(fps);
-	}
+	EngineProcess();
+	
 	ui::Engine::Ref().CloseWindow();
 	delete gameController;
 	delete ui::Engine::Ref().g;

@@ -24,7 +24,8 @@ Engine::Engine():
 	windowTargetPosition(0, 0),
 	FrameIndex(0),
 	Fullscreen(false),
-	Scale(1)
+	Scale(1),
+	break_(false)
 {
 }
 
@@ -47,6 +48,16 @@ void Engine::Begin(int width, int height)
 
 	width_ = width;
 	height_ = height;
+}
+
+void Engine::Break()
+{
+	break_ = true;
+}
+
+void Engine::UnBreak()
+{
+	break_ = false;
 }
 
 void Engine::Exit()

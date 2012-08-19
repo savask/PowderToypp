@@ -50,35 +50,7 @@ int Simulation::Load(int fullX, int fullY, GameSave * save)
 		y = int(tempPart.y + 0.5f);
 
 		if ((player.spwn == 1 && tempPart.type==PT_STKM) || (player2.spwn == 1 && tempPart.type==PT_STKM2))
-		{
 			continue;
-		}
-		else if (tempPart.type == PT_STKM)
-		{
-			//STKM_init_legs(&player, newIndex);
-			player.spwn = 1;
-			player.elem = PT_DUST;
-		}
-		else if (tempPart.type == PT_STKM2)
-		{
-			//STKM_init_legs(&player2, newIndex);
-			player2.spwn = 1;
-			player2.elem = PT_DUST;
-		}
-		else if (tempPart.type == PT_FIGH)
-		{
-			//TODO: 100 should be replaced with a macro
-			unsigned char fcount = 0;
-			while (fcount < 100 && fcount < (fighcount+1) && fighters[fcount].spwn==1) fcount++;
-			if (fcount < 100 && fighters[fcount].spwn==0)
-			{
-				tempPart.tmp = fcount;
-				fighters[fcount].spwn = 1;
-				fighters[fcount].elem = PT_DUST;
-				fighcount++;
-				//STKM_init_legs(&(sim->fighters[sim->fcount]), newIndex);
-			}
-		}
 		if (!elements[tempPart.type].Enabled)
 			continue;
 
@@ -86,6 +58,7 @@ int Simulation::Load(int fullX, int fullY, GameSave * save)
 		{
 			//Replace existing
 			parts[r>>8] = tempPart;
+			i = r>>8;
 			pmap[y][x] = 0;
 			elementCount[parts[r>>8].type]--;
 			elementCount[tempPart.type]++;
@@ -101,6 +74,33 @@ int Simulation::Load(int fullX, int fullY, GameSave * save)
 			parts[i] = tempPart;
 
 			elementCount[tempPart.type]++;
+		}
+
+		if (tempPart.type == PT_STKM)
+		{
+			Element_STKM::STKM_init_legs(this, &player, i);
+			player.spwn = 1;
+			player.elem = PT_DUST;
+		}
+		else if (tempPart.type == PT_STKM2)
+		{
+			Element_STKM::STKM_init_legs(this, &player2, i);
+			player2.spwn = 1;
+			player2.elem = PT_DUST;
+		}
+		else if (tempPart.type == PT_FIGH)
+		{
+			//TODO: 100 should be replaced with a macro
+			unsigned char fcount = 0;
+			while (fcount < 100 && fcount < (fighcount+1) && fighters[fcount].spwn==1) fcount++;
+			if (fcount < 100 && fighters[fcount].spwn==0)
+			{
+				tempPart.tmp = fcount;
+				fighters[fcount].spwn = 1;
+				fighters[fcount].elem = PT_DUST;
+				fighcount++;
+				Element_STKM::STKM_init_legs(this, &(fighters[fcount]), i);
+			}
 		}
 	}
 	parts_lastActiveIndex = NPART-1;
@@ -2477,7 +2477,7 @@ void Simulation::kill_part(int i)//kills particle number i
 	if (parts[i].type == PT_NONE)
 		return;
 
-	if(elementCount[parts[i].type] && parts[i].type)
+	if(parts[i].type > 0 && parts[i].type < PT_NUM && elementCount[parts[i].type] && parts[i].type)
 		elementCount[parts[i].type]--;
 	if (parts[i].type == PT_STKM)
 	{
@@ -3352,7 +3352,7 @@ void Simulation::update_particles_i(int start, int inc)
 		if (parts[i].type)
 		{
 			t = parts[i].type;
-			if (t<0 || t>=PT_NUM)
+			if (t<0 || t>=PT_NUM || !elements[t].Enabled)
 			{
 				kill_part(i);
 				continue;
@@ -4528,7 +4528,6 @@ void Simulation::update_particles()//doesn't update the particles themselves, bu
 
 Simulation::~Simulation()
 {
-	delete[] elements;
 	delete[] platent;
 	delete grav;
 	delete air;
@@ -4588,11 +4587,14 @@ Simulation::Simulation():
 	memcpy(platent, platentT, latentCount * sizeof(unsigned int));
 	free(platentT);
 	
-	elements = new Element[PT_NUM];
+	//elements = new Element[PT_NUM];
 	std::vector<Element> elementList = GetElements();
-	for(int i = 0; i < elementList.size(); i++)
+	for(int i = 0; i < PT_NUM; i++)
 	{
-		elements[i] = elementList[i];
+		if(i < elementList.size())
+			elements[i] = elementList[i];
+		else
+			elements[i] = Element();
 	}
 	
 	tools = GetTools();
