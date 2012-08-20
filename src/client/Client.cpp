@@ -813,13 +813,23 @@ SaveFile * Client::GetStamp(std::string stampID)
 		size_t fileSize = stampFile.tellg();
 		stampFile.seekg(0);
 
-		unsigned char * tempData = (unsigned char *)malloc(fileSize);
+		unsigned char * tempData = new unsigned char[fileSize];
 		stampFile.read((char *)tempData, fileSize);
 		stampFile.close();
 
 		SaveFile * file = new SaveFile(std::string(stampID).c_str());
-		GameSave * tempSave = new GameSave((char *)tempData, fileSize);
-		file->SetGameSave(tempSave);
+		GameSave * tempSave = NULL;
+		try
+		{
+			GameSave * tempSave = new GameSave((char *)tempData, fileSize);
+			file->SetGameSave(tempSave);
+		}
+		catch (ParseException & e)
+		{
+			delete[] tempData;
+			std::cerr << "Client: Invalid stamp file, " << stampID << " " << std::string(e.what()) << std::endl;
+		}
+		delete[] tempData;
 		return file;
 	}
 	else

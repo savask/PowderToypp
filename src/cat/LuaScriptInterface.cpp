@@ -6,6 +6,7 @@
  */
 
 #include <string>
+#include <iomanip>
 #include "Config.h"
 #include "Format.h"
 #include "LuaScriptInterface.h"
@@ -813,7 +814,7 @@ int luacon_elementwrite(lua_State* l){
 	return 0;
 }
 int luacon_keyevent(int key, int modifier, int event){
-	int i = 0, kpcontinue = 1;
+	int i = 0, kpcontinue = 1, callret;
 	char tempkey[] = {key, 0};
 	if(keypress_function_count){
 		for(i = 0; i < keypress_function_count && kpcontinue; i++){
@@ -822,7 +823,11 @@ int luacon_keyevent(int key, int modifier, int event){
 			lua_pushinteger(luacon_ci->l, key);
 			lua_pushinteger(luacon_ci->l, modifier);
 			lua_pushinteger(luacon_ci->l, event);
-			lua_pcall(luacon_ci->l, 4, 1, 0);
+			callret = lua_pcall(luacon_ci->l, 4, 1, 0);
+			if (callret)
+			{
+				luacon_ci->Log(CommandInterface::LogError, luacon_geterror());
+			}
 			if(lua_isboolean(luacon_ci->l, -1)){
 				kpcontinue = lua_toboolean(luacon_ci->l, -1);
 			}
@@ -832,7 +837,7 @@ int luacon_keyevent(int key, int modifier, int event){
 	return kpcontinue;
 }
 int luacon_mouseevent(int mx, int my, int mb, int event, int mouse_wheel){
-	int i = 0, mpcontinue = 1;
+	int i = 0, mpcontinue = 1, callret;
 	if(mouseclick_function_count){
 		for(i = 0; i < mouseclick_function_count && mpcontinue; i++){
 			lua_rawgeti(luacon_ci->l, LUA_REGISTRYINDEX, mouseclick_functions[i]);
@@ -841,7 +846,11 @@ int luacon_mouseevent(int mx, int my, int mb, int event, int mouse_wheel){
 			lua_pushinteger(luacon_ci->l, mb);
 			lua_pushinteger(luacon_ci->l, event);
 			lua_pushinteger(luacon_ci->l, mouse_wheel);
-			lua_pcall(luacon_ci->l, 5, 1, 0);
+			callret = lua_pcall(luacon_ci->l, 5, 1, 0);
+			if (callret)
+			{
+				luacon_ci->Log(CommandInterface::LogError, luacon_geterror());
+			}
 			if(lua_isboolean(luacon_ci->l, -1)){
 				mpcontinue = lua_toboolean(luacon_ci->l, -1);
 			}
@@ -873,8 +882,7 @@ int luacon_step(int mx, int my, int selectl, int selectr, int bsx, int bsy){
 				callret = lua_pcall(luacon_ci->l, 0, 0, 0);
 				if (callret)
 				{
-					// failed, TODO: better error reporting
-					luacon_ci->Log(CommandInterface::LogError, luacon_geterror());//("%s\n",luacon_geterror());
+					luacon_ci->Log(CommandInterface::LogError, luacon_geterror());
 				}
 			}
 		}
@@ -1305,22 +1313,24 @@ int luatpt_set_property(lua_State* l)
 			w = XRES-x;
 		if(y+h > YRES)
 			h = YRES-y;
-		for (nx = x; nx<x+w; nx++)
-			for (ny = y; ny<y+h; ny++){
-				r = luacon_sim->pmap[ny][nx];
-				if (!r || (partsel && partsel != luacon_sim->parts[r>>8].type))
+		Particle * parts = luacon_sim->parts;
+		for (i = 0; i < NPART; i++)
+		{
+			if (parts[i].type)
+			{
+				nx = (int)(parts[i].x + .5f);
+				ny = (int)(parts[i].y + .5f);
+				if (nx >= x && nx < x+w && ny >= y && ny < y+h && (!partsel || partsel == parts[i].type))
 				{
-					r = luacon_sim->photons[ny][nx];
-					if (!r || (partsel && partsel != luacon_sim->parts[r>>8].type))
-						continue;
-				}
-				i = r>>8;
-				if(format == CommandInterface::FormatFloat){
-					*((float*)(((unsigned char*)&luacon_sim->parts[i])+offset)) = f;
-				} else {
-					*((int*)(((unsigned char*)&luacon_sim->parts[i])+offset)) = t;
+					if(format == CommandInterface::FormatFloat){
+						*((float*)(((unsigned char*)&luacon_sim->parts[i])+offset)) = f;
+					} else {
+						*((int*)(((unsigned char*)&luacon_sim->parts[i])+offset)) = t;
+					}
 				}
 			}
+		}
+
 	} else {
 		// Got coords or particle index
 		if(i != -1 && y != -1){
@@ -1531,6 +1541,10 @@ int luatpt_get_property(lua_State* l)
 			return 1;
 		}
 		if (strcmp(prop,"dcolour")==0){
+			lua_pushinteger(l, luacon_sim->parts[i].dcolour);
+			return 1;
+		}
+		if (strcmp(prop,"dcolor")==0){
 			lua_pushinteger(l, luacon_sim->parts[i].dcolour);
 			return 1;
 		}
@@ -2083,6 +2097,8 @@ int luatpt_setwindowsize(lua_State* l)
 	return 0;
 }
 
+int screenshotIndex = 0;
+
 int luatpt_screenshot(lua_State* l)
 {
 	//TODO Implement
@@ -2098,7 +2114,11 @@ int luatpt_screenshot(lua_State* l)
 		VideoBuffer screenshot(luacon_ren->DumpFrame());
 		data = format::VideoBufferToPNG(screenshot);
 	}
-	Client::Ref().WriteFile(data, "screenshot.png");
+	std::stringstream filename;
+	filename << "screenshot_";
+	filename << std::setfill('0') << std::setw(6) << (screenshotIndex++);
+	filename << ".png";
+	Client::Ref().WriteFile(data, filename.str());
 	return 0;
 }
 

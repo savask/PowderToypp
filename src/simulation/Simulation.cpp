@@ -3626,7 +3626,7 @@ void Simulation::update_particles_i(int start, int inc)
 							{
 								pt = (c_heat - elements[t].Enthalpy)/c_Cm;
 
-								if (1>rand()%6) t = PT_SALT;
+								if (rand()%4==0) t = PT_SALT;
 								else t = PT_WTRV;
 							}
 							else
@@ -3851,8 +3851,8 @@ void Simulation::update_particles_i(int start, int inc)
 				y = (int)(parts[i].y+0.5f);
 			}
 #endif
-			//if (legacy_enable)//if heat sim is off
-			//update_legacy_all(this, i,x,y,surround_space,nt, parts, pmap); //TODO:pop
+			if(legacy_enable)//if heat sim is off
+				Element::legacyUpdate(this, i,x,y,surround_space,nt, parts, pmap);
 
 killed:
 			if (parts[i].type == PT_NONE)//if its dead, skip to next particle
@@ -4018,7 +4018,7 @@ killed:
 					{
 						parts[r>>8].tmp =  (parts[r>>8].tmp&~0xFF) | parts[i].type;
 						parts[r>>8].temp = parts[i].temp;
-						parts[r>>8].flags = parts[i].life;
+						parts[r>>8].tmp2 = parts[i].life;
 						parts[r>>8].pavg[0] = parts[i].tmp;
 						parts[r>>8].pavg[1] = parts[i].ctype;
 						kill_part(i);
