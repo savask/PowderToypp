@@ -179,7 +179,8 @@ GameView::GameView():
 	doScreenshot(false),
 	recording(false),
 	screenshotIndex(0),
-	recordingIndex(0)
+	recordingIndex(0),
+	toolTipPresence(0)
 {
 	
 	int currentX = 1;
@@ -334,7 +335,7 @@ GameView::GameView():
             v->c->OpenLogin();
         }
     };
-    loginButton = new ui::Button(ui::Point(Size.X-141, Size.Y-16), ui::Point(92, 15), "[sign in]");
+    loginButton = new ui::Button(ui::Point(Size.X-141, Size.Y-16), ui::Point(92, 15), "[sign in]", "Sign into simulation server");
 	loginButton->Appearance.HorizontalAlign = ui::Appearance::AlignLeft;
     loginButton->SetIcon(IconLogin);
     loginButton->SetActionCallback(new LoginAction(this));
@@ -1002,6 +1003,8 @@ void GameView::OnMouseMove(int x, int y, int dx, int dy)
 
 void GameView::OnMouseDown(int x, int y, unsigned button)
 {
+	if(altBehaviour)
+		button = BUTTON_MIDDLE;
 	if(selectMode!=SelectNone)
 	{
 		if(button==BUTTON_LEFT)
@@ -1035,6 +1038,9 @@ void GameView::OnMouseDown(int x, int y, unsigned button)
 
 void GameView::OnMouseUp(int x, int y, unsigned button)
 {
+	if(altBehaviour)
+		button = BUTTON_MIDDLE;
+
 	if(selectMode!=SelectNone)
 	{
 		if(button==BUTTON_LEFT)
@@ -1150,10 +1156,19 @@ void GameView::ToolTip(ui::Component * sender, ui::Point mousePosition, std::str
 		buttonTip = toolTip;
 		buttonTipShow = 120;
 	}
+	else if(sender->Position.X > Size.X-BARSIZE)// < Size.Y-(quickOptionButtons.size()+1)*16)
+	{
+		this->toolTip = toolTip;
+		toolTipPosition = ui::Point(Size.X-27-Graphics::textwidth((char*)toolTip.c_str()), sender->Position.Y+3);
+		if(toolTipPosition.Y+10 > Size.Y-MENUSIZE)
+			toolTipPosition = ui::Point(Size.X-27-Graphics::textwidth((char*)toolTip.c_str()), Size.Y-MENUSIZE-10);
+		toolTipPresence = 120;
+	}
 	else
 	{
 		this->toolTip = toolTip;
 		toolTipPosition = ui::Point(Size.X-27-Graphics::textwidth((char*)toolTip.c_str()), Size.Y-MENUSIZE-10);
+		toolTipPresence = 160;
 	}
 }
 
@@ -1177,6 +1192,19 @@ void GameView::OnMouseWheel(int x, int y, int d)
 			pointQueue.push(new ui::Point(x, y));
 		}
 	}
+}
+
+void GameView::ToggleDebug()
+{
+	showDebug = !showDebug;
+}
+
+void GameView::BeginStampSelection()
+{
+	selectMode = SelectStamp;
+	selectPoint1 = ui::Point(-1, -1);
+	infoTip = "\x0F\xEF\xEF\x10Select an area to create a stamp";
+	infoTipPresence = 120;
 }
 
 void GameView::OnKeyPress(int key, Uint16 character, bool shift, bool ctrl, bool alt)
@@ -1300,9 +1328,6 @@ void GameView::OnKeyPress(int key, Uint16 character, bool shift, bool ctrl, bool
 		else
 			c->AdjustGridSize(1);
 		break;
-	case 'd':
-		showDebug = !showDebug;
-		break;
 	case KEY_F1:
 		if(!introText)
 			introText = 8047;
@@ -1323,15 +1348,6 @@ void GameView::OnKeyPress(int key, Uint16 character, bool shift, bool ctrl, bool
 	case 'b':
 		if(ctrl)
 			c->SetDecoration();
-		break;
-	case 's':
-		selectMode = SelectStamp;
-		selectPoint1 = ui::Point(-1, -1);
-		infoTip = "\x0F\xEF\xEF\x10Select an area to create a stamp";
-		infoTipPresence = 120;
-		break;
-	case 'w':
-		c->SwitchGravity();
 		break;
 	case 'y':
 		c->SwitchAir();
@@ -1491,6 +1507,12 @@ void GameView::OnTick(float dt)
 		buttonTipShow -= int(dt)>0?int(dt):1;
 		if(buttonTipShow<0)
 			buttonTipShow = 0;	
+	}
+	if(toolTipPresence>0)
+	{
+		toolTipPresence -= int(dt)>0?int(dt):1;
+		if(toolTipPresence<0)
+			toolTipPresence = 0;	
 	}
 	c->Update();
 	if(lastLogEntry > -0.1f)
@@ -1822,6 +1844,63 @@ void GameView::OnDraw()
 				}
 			}
 		}
+
+		if(selectMode!=SelectNone)
+		{
+			if(selectMode==PlaceSave)
+			{
+				Thumbnail * tempThumb = placeSaveThumb;
+				if(tempThumb && selectPoint2.X!=-1)
+				{
+					int thumbX = selectPoint2.X - (tempThumb->Size.X/2);
+					int thumbY = selectPoint2.Y - (tempThumb->Size.Y/2);
+
+					ui::Point thumbPos = c->NormaliseBlockCoord(ui::Point(thumbX, thumbY));
+
+					if(thumbPos.X<0)
+						thumbPos.X = 0;
+					if(thumbPos.X+(tempThumb->Size.X)>=XRES)
+						thumbPos.X = XRES-tempThumb->Size.X;
+
+					if(thumbPos.Y<0)
+						thumbPos.Y = 0;
+					if(thumbPos.Y+(tempThumb->Size.Y)>=YRES)
+						thumbPos.Y = YRES-tempThumb->Size.Y;
+
+					ren->draw_image(tempThumb->Data, thumbPos.X, thumbPos.Y, tempThumb->Size.X, tempThumb->Size.Y, 128);
+
+					ren->xor_rect(thumbPos.X, thumbPos.Y, tempThumb->Size.X, tempThumb->Size.Y);
+				}
+			}
+			else
+			{
+				if(selectPoint1.X==-1)
+				{
+					ren->fillrect(0, 0, XRES, YRES, 0, 0, 0, 100);
+				}
+				else
+				{
+					int x2 = (selectPoint1.X>selectPoint2.X)?selectPoint1.X:selectPoint2.X;
+					int y2 = (selectPoint1.Y>selectPoint2.Y)?selectPoint1.Y:selectPoint2.Y;
+					int x1 = (selectPoint2.X<selectPoint1.X)?selectPoint2.X:selectPoint1.X;
+					int y1 = (selectPoint2.Y<selectPoint1.Y)?selectPoint2.Y:selectPoint1.Y;
+
+					if(x2>XRES-1)
+						x2 = XRES-1;
+					if(y2>YRES-1)
+						y2 = YRES-1;
+
+					ren->fillrect(0, 0, XRES, y1, 0, 0, 0, 100);
+					ren->fillrect(0, y2, XRES, YRES-y2, 0, 0, 0, 100);
+
+					ren->fillrect(0, y1, x1, (y2-y1), 0, 0, 0, 100);
+					ren->fillrect(x2, y1, XRES-x2, (y2-y1), 0, 0, 0, 100);
+
+					ren->xor_rect(x1, y1, (x2-x1)+1, (y2-y1)+1);
+				}
+			}
+		}
+
 		ren->RenderEnd();
 
 		if(doScreenshot)
@@ -1849,63 +1928,6 @@ void GameView::OnDraw()
 			filename << ".ppm";
 
 			Client::Ref().WriteFile(data, filename.str());
-		}
-
-
-		if(selectMode!=SelectNone)
-		{
-			if(selectMode==PlaceSave)
-			{
-				Thumbnail * tempThumb = placeSaveThumb;
-				if(tempThumb && selectPoint2.X!=-1)
-				{
-					int thumbX = selectPoint2.X - (tempThumb->Size.X/2);
-					int thumbY = selectPoint2.Y - (tempThumb->Size.Y/2);
-
-					ui::Point thumbPos = c->NormaliseBlockCoord(ui::Point(thumbX, thumbY));
-
-					if(thumbPos.X<0)
-						thumbPos.X = 0;
-					if(thumbPos.X+(tempThumb->Size.X)>=XRES)
-						thumbPos.X = XRES-tempThumb->Size.X;
-
-					if(thumbPos.Y<0)
-						thumbPos.Y = 0;
-					if(thumbPos.Y+(tempThumb->Size.Y)>=YRES)
-						thumbPos.Y = YRES-tempThumb->Size.Y;
-
-					g->draw_image(tempThumb->Data, thumbPos.X, thumbPos.Y, tempThumb->Size.X, tempThumb->Size.Y, 128);
-
-					g->xor_rect(thumbPos.X, thumbPos.Y, tempThumb->Size.X, tempThumb->Size.Y);
-				}
-			}
-			else
-			{
-				if(selectPoint1.X==-1)
-				{
-					g->fillrect(0, 0, XRES, YRES, 0, 0, 0, 100);
-				}
-				else
-				{
-					int x2 = (selectPoint1.X>selectPoint2.X)?selectPoint1.X:selectPoint2.X;
-					int y2 = (selectPoint1.Y>selectPoint2.Y)?selectPoint1.Y:selectPoint2.Y;
-					int x1 = (selectPoint2.X<selectPoint1.X)?selectPoint2.X:selectPoint1.X;
-					int y1 = (selectPoint2.Y<selectPoint1.Y)?selectPoint2.Y:selectPoint1.Y;
-
-					if(x2>XRES-1)
-						x2 = XRES-1;
-					if(y2>YRES-1)
-						y2 = YRES-1;
-
-					g->fillrect(0, 0, XRES, y1, 0, 0, 0, 100);
-					g->fillrect(0, y2, XRES, YRES-y2, 0, 0, 0, 100);
-
-					g->fillrect(0, y1, x1, (y2-y1), 0, 0, 0, 100);
-					g->fillrect(x2, y1, XRES-x2, (y2-y1), 0, 0, 0, 100);
-
-					g->xor_rect(x1, y1, (x2-x1)+1, (y2-y1)+1);
-				}
-			}
 		}
 
 		int startX = 20;
@@ -2048,9 +2070,9 @@ void GameView::OnDraw()
 		g->drawtext((XRES-Graphics::textwidth((char*)infoTip.c_str()))/2, (YRES/2)-2, (char*)infoTip.c_str(), 255, 255, 255, infoTipAlpha);
 	}
 
-	if(toolTipPosition.X!=-1 && toolTipPosition.Y!=-1 && toolTip.length())
+	if(toolTipPresence && toolTipPosition.X!=-1 && toolTipPosition.Y!=-1 && toolTip.length())
 	{
-		g->drawtext(toolTipPosition.X, toolTipPosition.Y, (char*)toolTip.c_str(), 255, 255, 255, 255);
+		g->drawtext(toolTipPosition.X, toolTipPosition.Y, (char*)toolTip.c_str(), 255, 255, 255, toolTipPresence>51?255:toolTipPresence*5);
 	}
 
 	if(buttonTipShow > 0)

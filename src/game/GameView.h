@@ -61,6 +61,7 @@ private:
 	std::string toolTip;
 	ui::Point toolTipPosition;
 	std::string infoTip;
+	int toolTipPresence;
 
 	queue<ui::Point*> pointQueue;
 	GameController * c;
@@ -138,6 +139,10 @@ public:
     void SetSample(SimulationSample sample);
     bool CtrlBehaviour(){ return ctrlBehaviour; }
     bool ShiftBehaviour(){ return shiftBehaviour; }
+	void ExitPrompt();
+	void ToggleDebug();
+	SelectMode GetSelectMode() { return selectMode; }
+	void BeginStampSelection();
 
 	void AttachController(GameController * _c){ c = _c; }
 	void NotifyRendererChanged(GameModel * sender);
@@ -160,7 +165,6 @@ public:
 	void NotifyQuickOptionsChanged(GameModel * sender);
 	void NotifyLastToolChanged(GameModel * sender);
 
-	void ExitPrompt();
 
 	virtual void ToolTip(ui::Component * sender, ui::Point mousePosition, std::string toolTip);
 

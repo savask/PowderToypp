@@ -169,7 +169,7 @@ bool Client::DoInstallation()
 		goto finalise;
 	}*/
 	
-	//AppDataPath = _getcwd(NULL, 0);
+	AppDataPath = _getcwd(NULL, 0);
 
 	//Move Game executable into application data folder
 	//TODO: Implement
@@ -805,31 +805,19 @@ RequestStatus Client::UploadSave(SaveInfo & save)
 
 SaveFile * Client::GetStamp(std::string stampID)
 {
-	std::ifstream stampFile;
-	stampFile.open(std::string(STAMPS_DIR PATH_SEP + stampID + ".stm").c_str(), std::ios::binary);
-	if(stampFile.is_open())
+	std::string stampFile = std::string(STAMPS_DIR PATH_SEP + stampID + ".stm");
+	if(FileExists(stampFile))
 	{
-		stampFile.seekg(0, std::ios::end);
-		size_t fileSize = stampFile.tellg();
-		stampFile.seekg(0);
-
-		unsigned char * tempData = new unsigned char[fileSize];
-		stampFile.read((char *)tempData, fileSize);
-		stampFile.close();
-
-		SaveFile * file = new SaveFile(std::string(stampID).c_str());
-		GameSave * tempSave = NULL;
+		SaveFile * file = new SaveFile(stampID);
 		try
 		{
-			GameSave * tempSave = new GameSave((char *)tempData, fileSize);
+			GameSave * tempSave = new GameSave(ReadFile(stampFile));
 			file->SetGameSave(tempSave);
 		}
 		catch (ParseException & e)
 		{
-			delete[] tempData;
 			std::cerr << "Client: Invalid stamp file, " << stampID << " " << std::string(e.what()) << std::endl;
 		}
-		delete[] tempData;
 		return file;
 	}
 	else
@@ -885,6 +873,8 @@ std::string Client::AddStamp(GameSave * saveData)
 	stampStream.open(std::string(STAMPS_DIR PATH_SEP + saveID.str()+".stm").c_str(), std::ios::binary);
 	stampStream.write((const char *)gameData, gameDataLength);
 	stampStream.close();
+
+	delete[] gameData;
 
 	stampIDs.push_front(saveID.str());
 
