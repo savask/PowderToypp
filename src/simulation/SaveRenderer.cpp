@@ -17,6 +17,7 @@ SaveRenderer::SaveRenderer(){
 	g = new Graphics();
 	sim = new Simulation();
 	ren = new Renderer(g, sim);
+	ren->decorations_enable = false;
 
 #if defined(OGLR) || defined(OGLI)
 	glEnable(GL_TEXTURE_2D);
@@ -37,7 +38,7 @@ SaveRenderer::SaveRenderer(){
 #endif
 }
 
-Thumbnail * SaveRenderer::Render(GameSave * save)
+Thumbnail * SaveRenderer::Render(GameSave * save, bool decorations)
 {
 	int width, height;
 	Thumbnail * tempThumb;
@@ -51,6 +52,7 @@ Thumbnail * SaveRenderer::Render(GameSave * save)
 	
 	if(!sim->Load(save))
 	{
+		ren->decorations_enable = decorations;
 #if defined(OGLR) || defined(OGLI)
 		pixel * pData = NULL;
 		unsigned char * texData = NULL;
@@ -121,7 +123,7 @@ Thumbnail * SaveRenderer::Render(GameSave * save)
 	return tempThumb;
 }
 
-Thumbnail * SaveRenderer::Render(unsigned char * saveData, int dataSize)
+Thumbnail * SaveRenderer::Render(unsigned char * saveData, int dataSize, bool decorations)
 {
 	GameSave * tempSave;
 	try {
@@ -136,7 +138,7 @@ Thumbnail * SaveRenderer::Render(unsigned char * saveData, int dataSize)
 		
 		return thumb;
 	}
-	Thumbnail * thumb = Render(tempSave);
+	Thumbnail * thumb = Render(tempSave, decorations);
 	delete tempSave;
 	return thumb;
 }
