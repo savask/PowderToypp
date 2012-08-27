@@ -3153,6 +3153,8 @@ void Simulation::update_particles_i(int start, int inc)
 	float pGravX, pGravY, pGravD;
 	int excessive_stacking_found = 0;
 
+	int startint, middleint, endint;
+
 	currentTick++;
 
 	if (lighting_recreate>0)
@@ -3897,37 +3899,6 @@ void Simulation::update_particles_i(int start, int inc)
 				}
 			}
 
-			//call the particle update function, if there is one
-#ifdef LUACONSOLE
-			if (elements[t].Update && lua_el_mode[t] != 2)
-#else
-			if (elements[t].Update)
-#endif
-			{
-				if ((*(elements[t].Update))(this, i,x,y,surround_space,nt, parts, pmap))
-					continue;
-				else if (t==PT_WARP)
-				{
-					// Warp does some movement in its update func, update variables to avoid incorrect data in pmap
-					x = (int)(parts[i].x+0.5f);
-					y = (int)(parts[i].y+0.5f);
-				}
-			}
-#ifdef LUACONSOLE
-			if(lua_el_mode[t])
-			{
-				if(luacon_part_update(t,i,x,y,surround_space,nt))
-					continue;
-				// Need to update variables, in case they've been changed by Lua
-				x = (int)(parts[i].x+0.5f);
-				y = (int)(parts[i].y+0.5f);
-			}
-#endif
-
-
-			if(legacy_enable)//if heat sim is off
-				Element::legacyUpdate(this, i,x,y,surround_space,nt, parts, pmap);
-
 killed:
 			if (parts[i].type == PT_NONE)//if its dead, skip to next particle
 				continue;
@@ -4400,6 +4371,52 @@ movedone:
 		}
 }
 
+//Update only elements' functions
+void Simulation::update_elements_i()
+{
+	int x, y, i, surround_space, nt, nx, ny, r, t;
+	for (i=0; i<=parts_lastActiveIndex; i++)
+		if (parts[i].type)
+		{
+			t = parts[i].type;
+
+			x = (int)(parts[i].x+0.5f);
+			y = (int)(parts[i].y+0.5f);
+
+			surround_space = nt = 0;//if nt is 1 after this, then there is a particle around the current particle, that is NOT the current particle's type, for water movement.
+			for (nx=-1; nx<2; nx++)
+				for (ny=-1; ny<2; ny++) {
+					if (nx||ny) {
+						if (!(r&0xFF))
+							surround_space = 1;//there is empty space
+						if ((r&0xFF)!=t)
+							nt = 1;//there is nothing or a different particle
+					}
+				}
+
+			//call the particle update function, if there is one
+#ifdef LUACONSOLE
+			if (elements[t].Update && lua_el_mode[t] != 2)
+#else
+				if (elements[t].Update)
+#endif
+				{
+					if ((*(elements[t].Update))(this, i,x,y,surround_space,nt, parts, pmap))
+						continue;
+				}
+#ifdef LUACONSOLE
+			if(lua_el_mode[t])
+			{
+				if(luacon_part_update(t,i,x,y,surround_space,nt))
+					continue;
+			}
+#endif
+
+			if(legacy_enable)//if heat sim is off
+				Element::legacyUpdate(this, i,x,y,surround_space,nt, parts, pmap);
+		}
+}
+
 int Simulation::GetParticleType(std::string type)
 {
 	int i = -1;
@@ -4520,7 +4537,10 @@ void Simulation::update_particles()//doesn't update the particles themselves, bu
 	}
 
 	if(!sys_pause||framerender)
+	{
 		update_particles_i(0, 1);
+		update_elements_i();
+	}
 
 	if(framerender)
 		framerender--;
