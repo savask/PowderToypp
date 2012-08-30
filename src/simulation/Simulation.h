@@ -10,6 +10,7 @@
 #include <cstring>
 #include <cstddef>
 #include <vector>
+#include <semaphore.h>
 
 #include "Config.h"
 #include "Elements.h"
@@ -41,6 +42,13 @@ class GameSave;
 class Simulation
 {
 private:
+	bool run_ele;
+	pthread_mutex_t run_ele_m;
+	int current_index;
+	pthread_mutex_t current_index_m;
+	pthread_barrier_t cycle_end_b;
+	sem_t cycle_start_s;
+	pthread_t ele_thread_id;
 public:
 
 	Gravity * grav;
@@ -161,6 +169,7 @@ public:
 	int nearest_part(int ci, int t, int max_d);
 	void update_particles_i(int start, int inc);
 	void update_elements_i();
+	static void *update_elements_helper(void *context);
 	void update_particles();
 	void rotate_area(int area_x, int area_y, int area_w, int area_h, int invert);
 	void clear_area(int area_x, int area_y, int area_w, int area_h);

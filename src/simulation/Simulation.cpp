@@ -1,6 +1,8 @@
 //#include <cstdlib>
 #include <cmath>
 #include <strings.h>
+#include <pthread.h>
+#include <semaphore.h>
 #include "Config.h"
 #include "Simulation.h"
 #include "Elements.h"
@@ -3153,8 +3155,6 @@ void Simulation::update_particles_i(int start, int inc)
 	float pGravX, pGravY, pGravD;
 	int excessive_stacking_found = 0;
 
-	int startint, middleint, endint;
-
 	currentTick++;
 
 	if (lighting_recreate>0)
@@ -3402,31 +3402,38 @@ void Simulation::update_particles_i(int start, int inc)
 		}
 			//the main particle loop function, goes over all particles.
 
-		for (i=0; i<=parts_lastActiveIndex; i++)
-			if (parts[i].type)
-			{
-				t = parts[i].type;
+	current_index = 0;
+	sem_post(&cycle_start_s);
+
+	for (i=0; i<=parts_lastActiveIndex; i++)
+		if (parts[i].type)
+		{
+			pthread_mutex_lock(&current_index_m);
+			current_index = i;
+			pthread_mutex_unlock(&current_index_m);
+
+			t = parts[i].type;
 
 			x = (int)(parts[i].x+0.5f);
 			y = (int)(parts[i].y+0.5f);
 
 			//this kills any particle out of the screen, or in a wall where it isn't supposed to go
 			if (x<CELL || y<CELL || x>=XRES-CELL || y>=YRES-CELL ||
-			        (bmap[y/CELL][x/CELL] &&
-			         (bmap[y/CELL][x/CELL]==WL_WALL ||
-			          bmap[y/CELL][x/CELL]==WL_WALLELEC ||
-			          bmap[y/CELL][x/CELL]==WL_ALLOWAIR ||
-			          (bmap[y/CELL][x/CELL]==WL_DESTROYALL) ||
-			          (bmap[y/CELL][x/CELL]==WL_ALLOWLIQUID && elements[t].Falldown!=2) ||
-			          (bmap[y/CELL][x/CELL]==WL_ALLOWSOLID && elements[t].Falldown!=1) ||
-			          (bmap[y/CELL][x/CELL]==WL_ALLOWGAS && !(elements[t].Properties&TYPE_GAS)) || //&& elements[t].Falldown!=0 && parts[i].type!=PT_FIRE && parts[i].type!=PT_SMKE && parts[i].type!=PT_HFLM) ||
-			          (bmap[y/CELL][x/CELL]==WL_ALLOWENERGY && !(elements[t].Properties&TYPE_ENERGY)) ||
-					  (bmap[y/CELL][x/CELL]==WL_DETECT && (t==PT_METL || t==PT_SPRK)) ||
-			          (bmap[y/CELL][x/CELL]==WL_EWALL && !emap[y/CELL][x/CELL])) && (t!=PT_STKM) && (t!=PT_STKM2) && (t!=PT_FIGH)))
-			{
-				kill_part(i);
-				continue;
-			}
+					(bmap[y/CELL][x/CELL] &&
+					 (bmap[y/CELL][x/CELL]==WL_WALL ||
+					  bmap[y/CELL][x/CELL]==WL_WALLELEC ||
+					  bmap[y/CELL][x/CELL]==WL_ALLOWAIR ||
+					  (bmap[y/CELL][x/CELL]==WL_DESTROYALL) ||
+					  (bmap[y/CELL][x/CELL]==WL_ALLOWLIQUID && elements[t].Falldown!=2) ||
+					  (bmap[y/CELL][x/CELL]==WL_ALLOWSOLID && elements[t].Falldown!=1) ||
+					  (bmap[y/CELL][x/CELL]==WL_ALLOWGAS && !(elements[t].Properties&TYPE_GAS)) || //&& elements[t].Falldown!=0 && parts[i].type!=PT_FIRE && parts[i].type!=PT_SMKE && parts[i].type!=PT_HFLM) ||
+					 (bmap[y/CELL][x/CELL]==WL_ALLOWENERGY && !(elements[t].Properties&TYPE_ENERGY)) ||
+					 (bmap[y/CELL][x/CELL]==WL_DETECT && (t==PT_METL || t==PT_SPRK)) ||
+					 (bmap[y/CELL][x/CELL]==WL_EWALL && !emap[y/CELL][x/CELL])) && (t!=PT_STKM) && (t!=PT_STKM2) && (t!=PT_FIGH)))
+					 {
+						 kill_part(i);
+						 continue;
+					 }
 			if (bmap[y/CELL][x/CELL]==WL_DETECT && emap[y/CELL][x/CELL]<8)
 				set_emap(x/CELL, y/CELL);
 
@@ -3464,19 +3471,19 @@ void Simulation::update_particles_i(int start, int inc)
 			//Gravity mode by Moach
 			switch (gravityMode)
 			{
-			default:
-			case 0:
-				pGravX = 0.0f;
-				pGravY = elements[t].Gravity;
-				break;
-			case 1:
-				pGravX = pGravY = 0.0f;
-				break;
-			case 2:
-				pGravD = 0.01f - hypotf((x - XCNTR), (y - YCNTR));
-				pGravX = elements[t].Gravity * ((float)(x - XCNTR) / pGravD);
-				pGravY = elements[t].Gravity * ((float)(y - YCNTR) / pGravD);
-				break;
+				default:
+				case 0:
+					pGravX = 0.0f;
+					pGravY = elements[t].Gravity;
+					break;
+				case 1:
+					pGravX = pGravY = 0.0f;
+					break;
+				case 2:
+					pGravD = 0.01f - hypotf((x - XCNTR), (y - YCNTR));
+					pGravX = elements[t].Gravity * ((float)(x - XCNTR) / pGravD);
+					pGravY = elements[t].Gravity * ((float)(y - YCNTR) / pGravD);
+					break;
 			}
 			//Get some gravity from the gravity map
 			if (t==PT_ANAR)
@@ -4369,52 +4376,92 @@ killed:
 movedone:
 			continue;
 		}
+
+		//Make current index bigger by 1, so update_elements_i can process the last particle
+		pthread_mutex_lock(&current_index_m);
+		current_index++;
+		pthread_mutex_unlock(&current_index_m);
+
+		pthread_barrier_wait(&cycle_end_b);
 }
 
 //Update only elements' functions
 void Simulation::update_elements_i()
 {
-	int x, y, i, surround_space, nt, nx, ny, r, t;
-	for (i=0; i<=parts_lastActiveIndex; i++)
-		if (parts[i].type)
+	int x, y, i, surround_space, nt, nx, ny, r, t, current_index_copy;
+	bool run_ele_copy;
+
+	while (true)
+	{
+		sem_wait(&cycle_start_s);
+
+		pthread_mutex_lock(&run_ele_m);
+		if (!run_ele)
 		{
-			t = parts[i].type;
+			pthread_mutex_unlock(&run_ele_m);
+			break;
+		}
+		pthread_mutex_unlock(&run_ele_m);
 
-			x = (int)(parts[i].x+0.5f);
-			y = (int)(parts[i].y+0.5f);
-
-			surround_space = nt = 0;//if nt is 1 after this, then there is a particle around the current particle, that is NOT the current particle's type, for water movement.
-			for (nx=-1; nx<2; nx++)
-				for (ny=-1; ny<2; ny++) {
-					if (nx||ny) {
-						if (!(r&0xFF))
-							surround_space = 1;//there is empty space
-						if ((r&0xFF)!=t)
-							nt = 1;//there is nothing or a different particle
-					}
-				}
-
-			//call the particle update function, if there is one
-#ifdef LUACONSOLE
-			if (elements[t].Update && lua_el_mode[t] != 2)
-#else
-				if (elements[t].Update)
-#endif
+		for (i=0; i<=parts_lastActiveIndex; i++)
+			if (parts[i].type)
+			{
+				//Wait untill particle i will be proceeded by update_particles_i
+				do
 				{
-					if ((*(elements[t].Update))(this, i,x,y,surround_space,nt, parts, pmap))
+					pthread_mutex_lock(&current_index_m);
+					current_index_copy = current_index;
+					pthread_mutex_unlock(&current_index_m);
+				}
+				while (i>=current_index_copy);
+
+				t = parts[i].type;
+
+				x = (int)(parts[i].x+0.5f);
+				y = (int)(parts[i].y+0.5f);
+
+				surround_space = nt = 0;//if nt is 1 after this, then there is a particle around the current particle, that is NOT the current particle's type, for water movement.
+				for (nx=-1; nx<2; nx++)
+					for (ny=-1; ny<2; ny++) {
+						if (nx||ny) {
+							if (!(r&0xFF))
+								surround_space = 1;//there is empty space
+							if ((r&0xFF)!=t)
+								nt = 1;//there is nothing or a different particle
+						}
+					}
+
+				//call the particle update function, if there is one
+#ifdef LUACONSOLE
+				if (elements[t].Update && lua_el_mode[t] != 2)
+#else
+					if (elements[t].Update)
+#endif
+					{
+						if ((*(elements[t].Update))(this, i,x,y,surround_space,nt, parts, pmap))
+							continue;
+					}
+#ifdef LUACONSOLE
+				if(lua_el_mode[t])
+				{
+					if(luacon_part_update(t,i,x,y,surround_space,nt))
 						continue;
 				}
-#ifdef LUACONSOLE
-			if(lua_el_mode[t])
-			{
-				if(luacon_part_update(t,i,x,y,surround_space,nt))
-					continue;
-			}
 #endif
 
-			if(legacy_enable)//if heat sim is off
-				Element::legacyUpdate(this, i,x,y,surround_space,nt, parts, pmap);
-		}
+				if(legacy_enable)//if heat sim is off
+					Element::legacyUpdate(this, i,x,y,surround_space,nt, parts, pmap);
+			}
+		pthread_barrier_wait(&cycle_end_b);
+	}
+
+	pthread_exit(NULL);
+}
+
+void *Simulation::update_elements_helper(void *context)
+{
+	((Simulation *)context)->update_elements_i();
+	return NULL;
 }
 
 int Simulation::GetParticleType(std::string type)
@@ -4539,7 +4586,7 @@ void Simulation::update_particles()//doesn't update the particles themselves, bu
 	if(!sys_pause||framerender)
 	{
 		update_particles_i(0, 1);
-		update_elements_i();
+		//update_elements_i();
 	}
 
 	if(framerender)
@@ -4572,6 +4619,26 @@ void Simulation::update_particles()//doesn't update the particles themselves, bu
 
 Simulation::~Simulation()
 {
+	//Join with element update thread
+	int rc;
+	void *status;
+
+	pthread_mutex_lock(&run_ele_m);
+	run_ele = false;
+	pthread_mutex_unlock(&run_ele_m);
+
+	//Unfreeze elements thread so it can check run_ele
+	sem_post(&cycle_start_s);
+
+	rc = pthread_join(ele_thread_id, &status);
+	if (rc)
+		throw std::string("Error at joining with elements tread!");
+
+	pthread_mutex_destroy(&run_ele_m);
+	pthread_mutex_destroy(&current_index_m);
+	pthread_barrier_destroy(&cycle_end_b);
+	sem_destroy(&cycle_start_s);
+
 	delete[] platent;
 	delete grav;
 	delete air;
@@ -4660,6 +4727,20 @@ Simulation::Simulation():
 
 	init_can_move();
 	clear_sim();
+	
+	//Create element update thread
+	int rc;
+	run_ele = true;
+	current_index = 0;
+
+	pthread_mutex_init(&run_ele_m, NULL);
+	pthread_mutex_init(&current_index_m, NULL);
+	pthread_barrier_init(&cycle_end_b, NULL, 2);
+	sem_init(&cycle_start_s, 0, 0);
+
+	rc = pthread_create(&ele_thread_id, NULL, &Simulation::update_elements_helper, this);
+	if (rc)
+		throw std::string("Error at creating elements thread!");
 
 	grav->gravity_mask();
 }
