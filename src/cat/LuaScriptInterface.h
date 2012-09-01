@@ -18,6 +18,11 @@ extern "C"
 #include "CommandInterface.h"
 #include "simulation/Simulation.h"
 
+namespace ui
+{
+	class Window;
+}
+
 //Because lua only has bindings for C, we're going to have to go outside "outside" the LuaScriptInterface, this means we can only have one instance :(
 
 #define LOCAL_LUA_DIR "Lua"
@@ -39,9 +44,30 @@ class LuaScriptInterface: public CommandInterface {
 	bool luacon_mousedown;
 	bool currentCommand;
 	TPTScriptInterface * legacy;
+
+	//Renderer
+	void initRendererAPI();
+	static int renderer_renderModes(lua_State * l);
+	static int renderer_displayModes(lua_State * l);
+	static int renderer_colourMode(lua_State * l);
+
+	//Elements
+	void initElementsAPI();
+	static int elements_allocate(lua_State * l);
+	static int elements_element(lua_State * l);
+	static int elements_property(lua_State * l);
+	static int elements_loadDefault(lua_State * l);
+	static int elements_free(lua_State * l);
+
+	//Interface
+	void initInterfaceAPI();
+	static int interface_showWindow(lua_State * l);
+	static int interface_closeWindow(lua_State * l);
+	static int interface_addComponent(lua_State * l);
 public:
+	ui::Window * Window;
 	lua_State *l;
-	LuaScriptInterface(GameModel * m);
+	LuaScriptInterface(GameController * c, GameModel * m);
 	virtual bool OnBrushChanged(int brushType, int rx, int ry);
 	virtual bool OnMouseMove(int x, int y, int dx, int dy);
 	virtual bool OnMouseDown(int x, int y, unsigned button);
@@ -50,6 +76,8 @@ public:
 	virtual bool OnKeyPress(int key, Uint16 character, bool shift, bool ctrl, bool alt);
 	virtual bool OnKeyRelease(int key, Uint16 character, bool shift, bool ctrl, bool alt);
 	virtual void OnTick();
+	virtual void Init();
+	virtual void SetWindow(ui::Window * window);
 	virtual int Command(std::string command);
 	virtual std::string FormatCommand(std::string command);
 	virtual ~LuaScriptInterface();

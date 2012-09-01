@@ -26,7 +26,8 @@ GameModel::GameModel():
 	stamp(NULL),
 	placeSave(NULL),
 	colour(255, 0, 0, 255),
-	toolStrength(1.0f)
+	toolStrength(1.0f),
+	activeColourPreset(-1)
 {
 	sim = new Simulation();
 	ren = new Renderer(ui::Engine::Ref().g, sim);
@@ -51,6 +52,9 @@ GameModel::GameModel():
 			std::vector<unsigned int> renderModes(tempArray.begin(), tempArray.end());
 			ren->SetRenderMode(renderModes);
 		}
+
+		ren->gravityFieldEnabled = Client::Ref().GetPrefBool("Renderer.GravityField", false);
+		ren->decorations_enable = Client::Ref().GetPrefBool("Renderer.Decorations", true);
 	}
 	catch(json::Exception & e)
 	{
@@ -85,6 +89,14 @@ GameModel::GameModel():
 	unsigned char colourA = min(Client::Ref().GetPrefInteger("Decoration.Alpha", 255), 255);
 
 	SetColourSelectorColour(ui::Colour(colourR, colourG, colourB, colourA));
+
+	colourPresets.push_back(ui::Colour(255, 255, 255));
+	colourPresets.push_back(ui::Colour(0, 255, 255));
+	colourPresets.push_back(ui::Colour(255, 0, 255));
+	colourPresets.push_back(ui::Colour(255, 255, 0));
+	colourPresets.push_back(ui::Colour(255, 0, 0));
+	colourPresets.push_back(ui::Colour(0, 255, 0));
+	colourPresets.push_back(ui::Colour(0, 0, 255));
 }
 
 GameModel::~GameModel()
@@ -97,6 +109,9 @@ GameModel::~GameModel()
 
 	std::vector<unsigned int> renderModes = ren->GetRenderMode();
 	Client::Ref().SetPref("Renderer.RenderModes", std::vector<unsigned int>(renderModes.begin(), renderModes.end()));
+
+	Client::Ref().SetPref("Renderer.GravityField", (bool)ren->gravityFieldEnabled);
+	Client::Ref().SetPref("Renderer.Decorations", (bool)ren->decorations_enable);
 
 	Client::Ref().SetPref("Simulation.EdgeMode", sim->edgeMode);
 
@@ -332,6 +347,8 @@ void GameModel::AddObserver(GameView * observer){
 	observer->NotifyZoomChanged(this);
 	observer->NotifyColourSelectorVisibilityChanged(this);
 	observer->NotifyColourSelectorColourChanged(this);
+	observer->NotifyColourPresetsChanged(this);
+	observer->NotifyColourActivePresetChanged(this);
 	observer->NotifyQuickOptionsChanged(this);
 	observer->NotifyLastToolChanged(this);
 	UpdateQuickOptions();
@@ -554,6 +571,31 @@ int GameModel::GetZoomFactor()
 	return ren->ZFACTOR;
 }
 
+void GameModel::SetActiveColourPreset(int preset)
+{
+	activeColourPreset = preset;
+	notifyColourActivePresetChanged();
+}
+
+int GameModel::GetActiveColourPreset()
+{
+	return activeColourPreset;
+}
+
+void GameModel::SetPresetColour(ui::Colour colour)
+{
+	if(activeColourPreset >= 0 && activeColourPreset < colourPresets.size())
+	{
+		colourPresets[activeColourPreset] = colour;
+		notifyColourPresetsChanged();
+	}
+}
+
+std::vector<ui::Colour> GameModel::GetColourPresets()
+{
+	return colourPresets;
+}
+
 void GameModel::SetColourSelectorVisibility(bool visibility)
 {
 	if(colourSelector != visibility)
@@ -748,6 +790,22 @@ void GameModel::notifyNotificationsChanged()
 	for(std::vector<GameView*>::iterator iter = observers.begin(); iter != observers.end(); ++iter)
 	{
 		(*iter)->NotifyNotificationsChanged(this);
+	}
+}
+
+void GameModel::notifyColourPresetsChanged()
+{
+	for(std::vector<GameView*>::iterator iter = observers.begin(); iter != observers.end(); ++iter)
+	{
+		(*iter)->NotifyColourPresetsChanged(this);
+	}
+}
+
+void GameModel::notifyColourActivePresetChanged()
+{
+	for(std::vector<GameView*>::iterator iter = observers.begin(); iter != observers.end(); ++iter)
+	{
+		(*iter)->NotifyColourActivePresetChanged(this);
 	}
 }
 

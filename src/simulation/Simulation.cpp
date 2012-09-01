@@ -1069,22 +1069,23 @@ int Simulation::Tool(int x, int y, int tool, float strength)
 	return 0;
 }
 
-int Simulation::ToolBrush(int x, int y, int tool, Brush * cBrush, float strength)
+int Simulation::ToolBrush(int positionX, int positionY, int tool, Brush * cBrush, float strength)
 {
-	int rx, ry, j, i;
-	if(!cBrush)
-		return 0;
-	rx = cBrush->GetRadius().X;
-	ry = cBrush->GetRadius().Y;
-	unsigned char *bitmap = cBrush->GetBitmap();
-	for (j=-ry; j<=ry; j++)
-		for (i=-rx; i<=rx; i++)
-			if(bitmap[(j+ry)*((rx*2)+1)+(i+rx+1)])
-			{
-				if ( x+i<0 || y+j<0 || x+i>=XRES || y+j>=YRES)
-					continue;
-				Tool(x+i, y+j, tool, strength);
-			}
+	if(cBrush)
+	{
+		int radiusX, radiusY, sizeX, sizeY;
+		
+		radiusX = cBrush->GetRadius().X;
+		radiusY = cBrush->GetRadius().Y;
+		
+		sizeX = cBrush->GetSize().X;
+		sizeY = cBrush->GetSize().Y;
+		unsigned char *bitmap = cBrush->GetBitmap();
+		for(int y = 0; y < sizeY; y++)
+			for(int x = 0; x < sizeX; x++)
+				if(bitmap[(y*sizeX)+x] && (positionX+(x-radiusX) >= 0 && positionY+(y-radiusY) >= 0 && positionX+(x-radiusX) < XRES && positionY+(y-radiusY) < YRES))
+					Tool(positionX+(x-radiusX), positionY+(y-radiusY), tool, strength);
+	}
 }
 
 void Simulation::ToolLine(int x1, int y1, int x2, int y2, int tool, Brush * cBrush, float strength)
@@ -1322,8 +1323,8 @@ int Simulation::CreateWalls(int x, int y, int rx, int ry, int c, int flags, Brus
 				}
 				if (b==WL_STREAM)
 				{
-					i = x + rx/2;
-					j = y + ry/2;
+					i = x + rx;///2;
+					j = y + ry;///2;
 					for (v=-1; v<2; v++)
 						for (u=-1; u<2; u++)
 							if (i+u>=0 && i+u<XRES/CELL &&
@@ -2691,6 +2692,12 @@ int Simulation::create_part(int p, int x, int y, int tv)
 				parts[pmap[y][x]>>8].ctype = t;
 				if (t==PT_LIFE && v<NGOLALT && (pmap[y][x]&0xFF)!=PT_STOR) parts[pmap[y][x]>>8].tmp = v;
 			}
+			else if ((pmap[y][x]&0xFF) == PT_DTEC && (pmap[y][x]&0xFF) != t)
+			{
+				parts[pmap[y][x]>>8].ctype = t;
+				if (t==PT_LIFE && v<NGOLALT)
+					parts[pmap[y][x]>>8].tmp = v;
+			}
 			return -1;
 		}
 		if (photons[y][x] && (elements[t].Properties & TYPE_ENERGY))
@@ -2899,6 +2906,9 @@ int Simulation::create_part(int p, int x, int y, int tv)
 				break;
 			case PT_BIZR: case PT_BIZRG: case PT_BIZRS:
 				parts[i].ctype = 0x47FFFF;
+				break;
+			case PT_DTEC:
+				parts[i].tmp2 = 2;
 				break;
 			default:
 				if (t==PT_FIGH)
@@ -3511,16 +3521,16 @@ void Simulation::update_particles_i(int start, int inc)
 #endif
 			}
 
-			j = surround_space = nt = 0;//if nt is 1 after this, then there is a particle around the current particle, that is NOT the current particle's type, for water movement.
+			j = surround_space = nt = 0;//if nt is greater than 1 after this, then there is a particle around the current particle, that is NOT the current particle's type, for water movement.
 			for (nx=-1; nx<2; nx++)
 				for (ny=-1; ny<2; ny++) {
 					if (nx||ny) {
 						surround[j] = r = pmap[y+ny][x+nx];
 						j++;
 						if (!(r&0xFF))
-							surround_space = 1;//there is empty space
+							surround_space++;//there is empty space
 						if ((r&0xFF)!=t)
-							nt = 1;//there is nothing or a different particle
+							nt++;//there is nothing or a different particle
 					}
 				}
 

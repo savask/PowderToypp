@@ -17,6 +17,7 @@
 #include "GameModelException.h"
 #include "simulation/Air.h"
 #include "elementsearch/ElementSearchActivity.h"
+#include "colourpicker/ColourPickerActivity.h"
 #include "update/UpdateActivity.h"
 #include "Notification.h"
 #include "filebrowser/FileBrowserActivity.h"
@@ -140,7 +141,8 @@ GameController::GameController():
 		options(NULL),
 		activePreview(NULL),
 		localBrowser(NULL),
-		HasDone(false)
+		HasDone(false),
+		firstTick(true)
 {
 	gameView = new GameView();
 	gameModel = new GameModel();
@@ -148,8 +150,8 @@ GameController::GameController():
 	gameView->AttachController(this);
 	gameModel->AddObserver(gameView);
 
-	commandInterface = new LuaScriptInterface(gameModel);//new TPTScriptInterface();
-	//commandInterface->AttachGameModel(gameModel);
+	commandInterface = new LuaScriptInterface(this, gameModel);//new TPTScriptInterface();
+	((LuaScriptInterface*)commandInterface)->SetWindow(gameView);
 
 	//sim = new Simulation();
 	Client::Ref().AddListener(this);
@@ -336,6 +338,15 @@ void GameController::AdjustZoomSize(int direction, bool logarithmic)
 
 ui::Point GameController::PointTranslate(ui::Point point)
 {
+	if(point.X >= XRES)
+		point.X = XRES-1;
+	if(point.Y >= YRES)
+		point.Y = YRES+1;
+	if(point.Y < 0)
+		point.Y = 0;
+	if(point.X < 0)
+		point.X = 0;
+
 	bool zoomEnabled = gameModel->GetZoomEnabled();
 	if(!zoomEnabled)
 		return point;
@@ -344,7 +355,7 @@ ui::Point GameController::PointTranslate(ui::Point point)
 	ui::Point zoomWindowPosition = gameModel->GetZoomWindowPosition();
 	ui::Point zoomWindowSize = ui::Point(gameModel->GetZoomSize()*zoomFactor, gameModel->GetZoomSize()*zoomFactor);
 
-	if(point.X > zoomWindowPosition.X && point.X > zoomWindowPosition.Y && point.X < zoomWindowPosition.X+zoomWindowSize.X && point.Y < zoomWindowPosition.Y+zoomWindowSize.Y)
+	if(point.X >= zoomWindowPosition.X && point.X >= zoomWindowPosition.Y && point.X <= zoomWindowPosition.X+zoomWindowSize.X && point.Y <= zoomWindowPosition.Y+zoomWindowSize.Y)
 		return ((point-zoomWindowPosition)/gameModel->GetZoomFactor())+gameModel->GetZoomPosition();
 	return point;
 }
@@ -649,6 +660,11 @@ bool GameController::KeyRelease(int key, Uint16 character, bool shift, bool ctrl
 
 void GameController::Tick()
 {
+	if(firstTick)
+	{
+		((LuaScriptInterface*)commandInterface)->Init();
+		firstTick = false;
+	}
 	commandInterface->OnTick();
 }
 
@@ -830,6 +846,11 @@ void GameController::SetDecoration()
 	gameModel->SetDecoration(!gameModel->GetDecoration());
 }
 
+void GameController::SetActiveColourPreset(int preset)
+{
+	gameModel->SetActiveColourPreset(preset);
+}
+
 void GameController::SetColour(ui::Colour colour)
 {
 	gameModel->SetColourSelectorColour(colour);
@@ -948,6 +969,22 @@ void GameController::OpenElementSearch()
 		toolList.insert(toolList.end(), menuToolList.begin(), menuToolList.end());
 	}
 	new ElementSearchActivity(gameModel, toolList);
+}
+
+void GameController::OpenColourPicker()
+{
+	class ColourPickerCallback: public ColourPickedCallback
+	{
+		GameController * c;
+	public:
+		ColourPickerCallback(GameController * _c): c(_c) {}
+		virtual  ~ColourPickerCallback() {};
+		virtual void ColourPicked(ui::Colour colour)
+		{
+			c->SetColour(colour);
+		}
+	};
+	new ColourPickerActivity(gameModel->GetColourSelectorColour(), new ColourPickerCallback(this));
 }
 
 void GameController::OpenTags()

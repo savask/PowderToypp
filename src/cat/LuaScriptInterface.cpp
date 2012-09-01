@@ -7,6 +7,9 @@
 
 #include <string>
 #include <iomanip>
+#include <vector>
+#include <algorithm>
+#include <locale>
 #include "Config.h"
 #include "Format.h"
 #include "LuaScriptInterface.h"
@@ -20,18 +23,41 @@
 #include "LuaScriptHelper.h"
 #include "client/HTTP.h"
 
- #ifdef WIN
+#include "LuaBit.h"
+
+#include "LuaLuna.h"
+#include "LuaWindow.h"
+#include "LuaButton.h"
+#include "LuaLabel.h"
+
+#ifdef WIN
 #include <direct.h>
 #else
 #include <sys/stat.h>
 #endif
- #include <time.h>
+#include <time.h>
 
-LuaScriptInterface::LuaScriptInterface(GameModel * m):
-	CommandInterface(m),
+LuaScriptInterface::LuaScriptInterface(GameController * c, GameModel * m):
+	CommandInterface(c, m),
 	currentCommand(false),
-	legacy(new TPTScriptInterface(m))
+	legacy(new TPTScriptInterface(c, m))
 {
+	luacon_model = m;
+	luacon_sim = m->GetSimulation();
+	luacon_g = ui::Engine::Ref().g;
+	luacon_ren = m->GetRenderer();
+	luacon_ci = this;
+
+	//New TPT API
+	l = lua_open();
+	luaL_openlibs(l);
+	luaopen_bit(l);
+
+	initInterfaceAPI();
+	initRendererAPI();
+	initElementsAPI();
+
+	//Old TPT API
 	int i = 0, j;
 	char tmpname[12];
 	int currentElementMeta, currentElement;
@@ -104,15 +130,6 @@ LuaScriptInterface::LuaScriptInterface(GameModel * m):
 
 	luacon_currentCommand = &currentCommand;
 	luacon_lastError = &lastError;
-
-	luacon_model = m;
-	luacon_sim = m->GetSimulation();
-	luacon_g = ui::Engine::Ref().g;
-	luacon_ren = m->GetRenderer();
-	luacon_ci = this;
-
-	l = lua_open();
-	luaL_openlibs(l);
 
 	//Replace print function with our screen logging thingy
 	lua_pushcfunction(l, luatpt_log);
@@ -240,9 +257,697 @@ tpt.partsdata = nil");
 		lua_el_mode[i] = 0;
 	}
 
-	//Autorun
-	luacon_eval("dofile(\"autorun.lua\")"); //Autorun lua script
 }
+
+void LuaScriptInterface::Init()
+{
+	if(luacon_eval("dofile(\"autorun.lua\")"))
+	{
+		luacon_ci->Log(CommandInterface::LogError, luacon_geterror());
+	}
+}
+
+void LuaScriptInterface::SetWindow(ui::Window * window)
+{
+	Window = window;
+}
+
+//// Begin Interface API
+
+void LuaScriptInterface::initInterfaceAPI()
+{
+	struct luaL_reg interfaceAPIMethods [] = {
+		{"showWindow", interface_showWindow},
+		{"closeWindow", interface_closeWindow},
+		{"addComponent", interface_addComponent},
+		{NULL, NULL}
+	};
+	luaL_register(l, "interface", interfaceAPIMethods);
+	Luna<LuaWindow>::Register(l);
+	Luna<LuaButton>::Register(l);
+	Luna<LuaLabel>::Register(l);
+}
+
+int LuaScriptInterface::interface_addComponent(lua_State * l)
+{
+	void * luaComponent = NULL;
+	ui::Component * component = NULL;
+	if(luaComponent = Luna<LuaButton>::tryGet(l, 1))
+		component = Luna<LuaButton>::get(luaComponent)->GetComponent();
+	else if(luaComponent = Luna<LuaLabel>::tryGet(l, 1))
+		component = Luna<LuaLabel>::get(luaComponent)->GetComponent();
+	else
+		luaL_typerror(l, 1, "Component");
+	if(luacon_ci->Window && component)
+		luacon_ci->Window->AddComponent(component);
+	return 0;
+}
+
+int LuaScriptInterface::interface_showWindow(lua_State * l)
+{
+	LuaWindow * window = Luna<LuaWindow>::check(l, 1);
+	if(window && ui::Engine::Ref().GetWindow()!=window->GetWindow())
+		ui::Engine::Ref().ShowWindow(window->GetWindow());
+	return 0;
+}
+
+int LuaScriptInterface::interface_closeWindow(lua_State * l)
+{
+	LuaWindow * window = Luna<LuaWindow>::check(l, 1);
+	if(window && ui::Engine::Ref().GetWindow()==window->GetWindow())
+		ui::Engine::Ref().CloseWindow();
+	return 0;
+}
+
+
+//// Begin Renderer API
+
+void LuaScriptInterface::initRendererAPI()
+{
+	//Methods
+	struct luaL_reg rendererAPIMethods [] = {
+		{"renderModes", renderer_renderModes},
+		{"displayModes", renderer_displayModes},
+		{"colourMode", renderer_colourMode},
+		{"colorMode", renderer_colourMode}, //Duplicate of above to make americans happy
+		{NULL, NULL}
+	};
+	luaL_register(l, "renderer", rendererAPIMethods);
+	int rendererAPI = lua_gettop(l);
+
+	//Static values
+	//Particle pixel modes/fire mode/effects
+	lua_pushinteger(l, PMODE); lua_setfield(l, rendererAPI, "PMODE");
+	lua_pushinteger(l, PMODE_NONE); lua_setfield(l, rendererAPI, "PMODE_NONE");
+	lua_pushinteger(l, PMODE_FLAT); lua_setfield(l, rendererAPI, "PMODE_FLAT");
+	lua_pushinteger(l, PMODE_BLOB); lua_setfield(l, rendererAPI, "PMODE_BLOB");
+	lua_pushinteger(l, PMODE_BLUR); lua_setfield(l, rendererAPI, "PMODE_BLUR");
+	lua_pushinteger(l, PMODE_GLOW); lua_setfield(l, rendererAPI, "PMODE_GLOW");
+	lua_pushinteger(l, PMODE_SPARK); lua_setfield(l, rendererAPI, "PMODE_SPARK");
+	lua_pushinteger(l, PMODE_FLARE); lua_setfield(l, rendererAPI, "PMODE_FLARE");
+	lua_pushinteger(l, PMODE_LFLARE); lua_setfield(l, rendererAPI, "PMODE_LFLARE");
+	lua_pushinteger(l, PMODE_ADD); lua_setfield(l, rendererAPI, "PMODE_ADD");
+	lua_pushinteger(l, PMODE_BLEND); lua_setfield(l, rendererAPI, "PMODE_BLEND");
+	lua_pushinteger(l, PSPEC_STICKMAN); lua_setfield(l, rendererAPI, "PSPEC_STICKMAN");
+	lua_pushinteger(l, OPTIONS); lua_setfield(l, rendererAPI, "OPTIONS");
+	lua_pushinteger(l, NO_DECO); lua_setfield(l, rendererAPI, "NO_DECO");
+	lua_pushinteger(l, DECO_FIRE); lua_setfield(l, rendererAPI, "DECO_FIRE");
+	lua_pushinteger(l, FIREMODE); lua_setfield(l, rendererAPI, "FIREMODE");
+	lua_pushinteger(l, FIRE_ADD); lua_setfield(l, rendererAPI, "FIRE_ADD");
+	lua_pushinteger(l, FIRE_BLEND); lua_setfield(l, rendererAPI, "FIRE_BLEND");
+	lua_pushinteger(l, EFFECT); lua_setfield(l, rendererAPI, "EFFECT");
+	lua_pushinteger(l, EFFECT_GRAVIN); lua_setfield(l, rendererAPI, "EFFECT_GRAVIN");
+	lua_pushinteger(l, EFFECT_GRAVOUT); lua_setfield(l, rendererAPI, "EFFECT_GRAVOUT");
+	lua_pushinteger(l, EFFECT_LINES); lua_setfield(l, rendererAPI, "EFFECT_LINES");
+	lua_pushinteger(l, EFFECT_DBGLINES); lua_setfield(l, rendererAPI, "EFFECT_DBGLINES");
+
+	//Display/Render/Colour modes
+	lua_pushinteger(l, RENDER_EFFE); lua_setfield(l, rendererAPI, "RENDER_EFFE");
+	lua_pushinteger(l, RENDER_FIRE); lua_setfield(l, rendererAPI, "RENDER_FIRE");
+	lua_pushinteger(l, RENDER_GLOW); lua_setfield(l, rendererAPI, "RENDER_GLOW");
+	lua_pushinteger(l, RENDER_BLUR); lua_setfield(l, rendererAPI, "RENDER_BLUR");
+	lua_pushinteger(l, RENDER_BLOB); lua_setfield(l, rendererAPI, "RENDER_BLOB");
+	lua_pushinteger(l, RENDER_BASC); lua_setfield(l, rendererAPI, "RENDER_BASC");
+	lua_pushinteger(l, RENDER_NONE); lua_setfield(l, rendererAPI, "RENDER_NONE");
+	lua_pushinteger(l, COLOUR_HEAT); lua_setfield(l, rendererAPI, "COLOUR_HEAT");
+	lua_pushinteger(l, COLOUR_LIFE); lua_setfield(l, rendererAPI, "COLOUR_LIFE");
+	lua_pushinteger(l, COLOUR_GRAD); lua_setfield(l, rendererAPI, "COLOUR_GRAD");
+	lua_pushinteger(l, COLOUR_BASC); lua_setfield(l, rendererAPI, "COLOUR_BASC");
+	lua_pushinteger(l, COLOUR_DEFAULT); lua_setfield(l, rendererAPI, "COLOUR_DEFAULT");
+	lua_pushinteger(l, DISPLAY_AIRC); lua_setfield(l, rendererAPI, "DISPLAY_AIRC");
+	lua_pushinteger(l, DISPLAY_AIRP); lua_setfield(l, rendererAPI, "DISPLAY_AIRP");
+	lua_pushinteger(l, DISPLAY_AIRV); lua_setfield(l, rendererAPI, "DISPLAY_AIRV");
+	lua_pushinteger(l, DISPLAY_AIRH); lua_setfield(l, rendererAPI, "DISPLAY_AIRH");
+	lua_pushinteger(l, DISPLAY_AIR); lua_setfield(l, rendererAPI, "DISPLAY_AIR");
+	lua_pushinteger(l, DISPLAY_WARP); lua_setfield(l, rendererAPI, "DISPLAY_WARP");
+	lua_pushinteger(l, DISPLAY_PERS); lua_setfield(l, rendererAPI, "DISPLAY_PERS");
+	lua_pushinteger(l, DISPLAY_EFFE); lua_setfield(l, rendererAPI, "DISPLAY_EFFE");
+}
+
+//get/set render modes list
+int LuaScriptInterface::renderer_renderModes(lua_State * l)
+{
+	int args = lua_gettop(l);
+	if(args)
+	{
+		int size = 0;
+		luaL_checktype(l, 1, LUA_TTABLE);
+		size = luaL_getn(l, 1);
+		
+		std::vector<unsigned int> renderModes;
+		for(int i = 1; i <= size; i++)
+		{
+			lua_rawgeti(l, 1, i);
+			renderModes.push_back(lua_tointeger(l, -1));
+			lua_pop(l, 1);
+		}
+		luacon_ren->SetRenderMode(renderModes);
+		return 0;
+	}
+	else
+	{
+		lua_newtable(l);
+		std::vector<unsigned int> renderModes = luacon_ren->GetRenderMode();
+		int i = 1;
+		for(std::vector<unsigned int>::iterator iter = renderModes.begin(), end = renderModes.end(); iter != end; ++iter)
+		{
+			lua_pushinteger(l, *iter);
+			lua_rawseti(l, -2, i++);
+		}
+		return 1;
+	}
+}
+
+int LuaScriptInterface::renderer_displayModes(lua_State * l)
+{
+	int args = lua_gettop(l);
+	if(args)
+	{
+		int size = 0;
+		luaL_checktype(l, 1, LUA_TTABLE);
+		size = luaL_getn(l, 1);
+		
+		std::vector<unsigned int> displayModes;
+		for(int i = 1; i <= size; i++)
+		{
+			lua_rawgeti(l, 1, i);
+			displayModes.push_back(lua_tointeger(l, -1));
+			lua_pop(l, 1);
+		}
+		luacon_ren->SetDisplayMode(displayModes);
+		return 0;
+	}
+	else
+	{
+		lua_newtable(l);
+		std::vector<unsigned int> displayModes = luacon_ren->GetDisplayMode();
+		int i = 1;
+		for(std::vector<unsigned int>::iterator iter = displayModes.begin(), end = displayModes.end(); iter != end; ++iter)
+		{
+			lua_pushinteger(l, *iter);
+			lua_rawseti(l, -2, i++);
+		}
+		return 1;
+	}
+}
+
+int LuaScriptInterface::renderer_colourMode(lua_State * l)
+{
+	int args = lua_gettop(l);
+	if(args)
+	{
+		luaL_checktype(l, 1, LUA_TNUMBER);
+		luacon_ren->SetColourMode(lua_tointeger(l, 1));
+		lua_pop(l, 1);
+		return 0;
+	}
+	else
+	{
+		lua_pushinteger(l, luacon_ren->GetColourMode());
+		return 1;
+	}
+	return luaL_error(l, "Not implemented");
+}
+
+void LuaScriptInterface::initElementsAPI()
+{
+	//Methods
+	struct luaL_reg elementsAPIMethods [] = {
+		{"allocate", elements_allocate},
+		{"element", elements_element},
+		{"property", elements_property},
+		{"free", elements_free},
+		{"loadDefault", elements_loadDefault},
+		{NULL, NULL}
+	};
+	luaL_register(l, "elements", elementsAPIMethods);
+	int elementsAPI = lua_gettop(l);
+
+	//Static values
+	//Element types/properties/states
+	lua_pushinteger(l, TYPE_PART); 			lua_setfield(l, elementsAPI, "TYPE_PART");
+	lua_pushinteger(l, TYPE_LIQUID); 		lua_setfield(l, elementsAPI, "TYPE_LIQUID");
+	lua_pushinteger(l, TYPE_SOLID); 		lua_setfield(l, elementsAPI, "TYPE_SOLID");
+	lua_pushinteger(l, TYPE_GAS); 			lua_setfield(l, elementsAPI, "TYPE_GAS");
+	lua_pushinteger(l, TYPE_ENERGY); 		lua_setfield(l, elementsAPI, "TYPE_ENERGY");
+	lua_pushinteger(l, PROP_CONDUCTS); 		lua_setfield(l, elementsAPI, "PROP_CONDUCTS");
+	lua_pushinteger(l, PROP_BLACK); 		lua_setfield(l, elementsAPI, "PROP_BLACK");
+	lua_pushinteger(l, PROP_NEUTPENETRATE); lua_setfield(l, elementsAPI, "PROP_NEUTPENETRATE");
+	lua_pushinteger(l, PROP_NEUTABSORB); 	lua_setfield(l, elementsAPI, "PROP_NEUTABSORB");
+	lua_pushinteger(l, PROP_NEUTPASS); 		lua_setfield(l, elementsAPI, "PROP_NEUTPASS");
+	lua_pushinteger(l, PROP_DEADLY); 		lua_setfield(l, elementsAPI, "PROP_DEADLY");
+	lua_pushinteger(l, PROP_HOT_GLOW); 		lua_setfield(l, elementsAPI, "PROP_HOT_GLOW");
+	lua_pushinteger(l, PROP_LIFE); 			lua_setfield(l, elementsAPI, "PROP_LIFE");
+	lua_pushinteger(l, PROP_RADIOACTIVE); 	lua_setfield(l, elementsAPI, "PROP_RADIOACTIVE");
+	lua_pushinteger(l, PROP_LIFE_DEC); 		lua_setfield(l, elementsAPI, "PROP_LIFE_DEC");
+	lua_pushinteger(l, PROP_LIFE_KILL); 	lua_setfield(l, elementsAPI, "PROP_LIFE_KILL");
+	lua_pushinteger(l, PROP_LIFE_KILL_DEC); lua_setfield(l, elementsAPI, "PROP_LIFE_KILL_DEC");
+	lua_pushinteger(l, PROP_SPARKSETTLE); 	lua_setfield(l, elementsAPI, "PROP_SPARKSETTLE");
+	lua_pushinteger(l, PROP_NOAMBHEAT); 	lua_setfield(l, elementsAPI, "PROP_NOAMBHEAT");
+	lua_pushinteger(l, FLAG_STAGNANT); 		lua_setfield(l, elementsAPI, "FLAG_STAGNANT");
+	lua_pushinteger(l, FLAG_SKIPMOVE); 		lua_setfield(l, elementsAPI, "FLAG_SKIPMOVE");
+	lua_pushinteger(l, FLAG_MOVABLE); 		lua_setfield(l, elementsAPI, "FLAG_MOVABLE");
+	lua_pushinteger(l, ST_NONE); 			lua_setfield(l, elementsAPI, "ST_NONE");
+	lua_pushinteger(l, ST_SOLID); 			lua_setfield(l, elementsAPI, "ST_SOLID");
+	lua_pushinteger(l, ST_LIQUID); 			lua_setfield(l, elementsAPI, "ST_LIQUID");
+	lua_pushinteger(l, ST_GAS); 			lua_setfield(l, elementsAPI, "ST_GAS");
+
+	lua_pushinteger(l, SC_WALL);		lua_setfield(l, elementsAPI, "SC_WALL");
+	lua_pushinteger(l, SC_ELEC);		lua_setfield(l, elementsAPI, "SC_ELEC");
+	lua_pushinteger(l, SC_POWERED);		lua_setfield(l, elementsAPI, "SC_POWERED");
+	lua_pushinteger(l, SC_FORCE);		lua_setfield(l, elementsAPI, "SC_FORCE");
+	lua_pushinteger(l, SC_EXPLOSIVE);	lua_setfield(l, elementsAPI, "SC_EXPLOSIVE");
+	lua_pushinteger(l, SC_GAS);			lua_setfield(l, elementsAPI, "SC_GAS");
+	lua_pushinteger(l, SC_LIQUID);		lua_setfield(l, elementsAPI, "SC_LIQUID");
+	lua_pushinteger(l, SC_POWDERS);		lua_setfield(l, elementsAPI, "SC_POWDERS");
+	lua_pushinteger(l, SC_SOLIDS);		lua_setfield(l, elementsAPI, "SC_SOLIDS");
+	lua_pushinteger(l, SC_NUCLEAR);		lua_setfield(l, elementsAPI, "SC_NUCLEAR");
+	lua_pushinteger(l, SC_SPECIAL);		lua_setfield(l, elementsAPI, "SC_SPECIAL");
+	lua_pushinteger(l, SC_LIFE);		lua_setfield(l, elementsAPI, "SC_LIFE");
+	lua_pushinteger(l, SC_TOOL);		lua_setfield(l, elementsAPI, "SC_TOOL");
+	lua_pushinteger(l, SC_DECO);		lua_setfield(l, elementsAPI, "SC_DECO");
+
+	//Element identifiers
+	for(int i = 0; i < PT_NUM; i++)
+	{
+		if(luacon_sim->elements[i].Enabled)
+		{
+			lua_pushinteger(l, i);
+			lua_setfield(l, elementsAPI, luacon_sim->elements[i].Identifier);
+		}
+	}
+}
+
+int LuaScriptInterface::elements_loadDefault(lua_State * l)
+{
+	int args = lua_gettop(l);
+	if(args)
+	{
+		luaL_checktype(l, 1, LUA_TNUMBER);
+		int id = lua_tointeger(l, 1);
+		if(id < 0 || id >= PT_NUM)
+			return luaL_error(l, "Invalid element");
+
+		lua_getglobal(l, "elements");
+		lua_pushnil(l);
+		lua_setfield(l, -2, luacon_sim->elements[id].Identifier);
+
+		std::vector<Element> elementList = GetElements();
+		if(id < elementList.size())
+			luacon_sim->elements[id] = elementList[id];
+		else
+			luacon_sim->elements[id] = Element();
+
+		lua_pushinteger(l, id);
+		lua_setfield(l, -2, luacon_sim->elements[id].Identifier);
+		lua_pop(l, 1);
+	}
+	else
+	{
+		std::vector<Element> elementList = GetElements();
+		for(int i = 0; i < PT_NUM; i++)
+		{
+			if(i < elementList.size())
+				luacon_sim->elements[i] = elementList[i];
+			else
+				luacon_sim->elements[i] = Element();
+		}
+		lua_pushnil(l);
+		lua_setglobal(l, "elements");
+		luacon_ci->initElementsAPI();
+	}
+
+	luacon_model->BuildMenus();
+	luacon_sim->init_can_move();
+	std::fill(luacon_ren->graphicscache, luacon_ren->graphicscache+PT_NUM, gcache_item());
+
+}
+
+int LuaScriptInterface::elements_allocate(lua_State * l)
+{
+	std::string group, id, identifier;
+	luaL_checktype(l, 1, LUA_TSTRING);
+	luaL_checktype(l, 2, LUA_TSTRING);
+	group = std::string(lua_tostring(l, 1));
+	std::transform(group.begin(), group.end(), group.begin(), ::toupper);
+	id = std::string(lua_tostring(l, 2));
+	std::transform(id.begin(), id.end(), id.begin(), ::toupper);
+
+	if(group == "DEFAULT")
+		return luaL_error(l, "You cannot create elements in the 'default' group.");
+
+	identifier = group + "_PT_" + id;
+
+	for(int i = 0; i < PT_NUM; i++)
+	{
+		if(luacon_sim->elements[i].Enabled && std::string(luacon_sim->elements[i].Identifier) == identifier)
+			return luaL_error(l, "Element identifier already in use");
+	}
+
+	int newID = -1;
+	for(int i = PT_NUM-1; i >= 0; i--)
+	{
+		if(!luacon_sim->elements[i].Enabled)
+		{
+			newID = i;
+			luacon_sim->elements[i] = Element();
+			luacon_sim->elements[i].Enabled = true;
+			luacon_sim->elements[i].Identifier = strdup(identifier.c_str());
+			break;
+		}
+	}
+
+	if(newID != -1)
+	{	
+		lua_getglobal(l, "elements");
+		lua_pushinteger(l, newID);
+		lua_setfield(l, -2, identifier.c_str());
+		lua_pop(l, 1);
+	}
+
+	lua_pushinteger(l, newID);
+	return 1;
+}
+
+int LuaScriptInterface::elements_element(lua_State * l)
+{
+	int args = lua_gettop(l);
+	int id;
+	luaL_checktype(l, 1, LUA_TNUMBER);
+	id = lua_tointeger(l, 1);
+
+	if(id < 0 || id >= PT_NUM || !luacon_sim->elements[id].Enabled)
+		return luaL_error(l, "Invalid element");
+
+	if(args > 1)
+	{
+		luaL_checktype(l, 2, LUA_TTABLE);
+		std::vector<StructProperty> properties = Element::GetProperties();
+		//Write values from native data to a table
+		for(std::vector<StructProperty>::iterator iter = properties.begin(), end = properties.end(); iter != end; ++iter)
+		{
+			lua_getfield(l, -1, (*iter).Name.c_str());
+			if(lua_type(l, -1) != LUA_TNIL)
+			{
+				intptr_t offset = (*iter).Offset;
+				switch((*iter).Type)
+				{
+					case StructProperty::ParticleType:
+					case StructProperty::Integer:
+						*((int*)(((unsigned char*)&luacon_sim->elements[id])+offset)) = lua_tointeger(l, -1);
+						break;
+					case StructProperty::UInteger:
+						*((unsigned int*)(((unsigned char*)&luacon_sim->elements[id])+offset)) = lua_tointeger(l, -1);
+						break;
+					case StructProperty::Float:
+						*((float*)(((unsigned char*)&luacon_sim->elements[id])+offset)) = lua_tonumber(l, -1);
+						break;
+					case StructProperty::Char:
+						*((char*)(((unsigned char*)&luacon_sim->elements[id])+offset)) = lua_tointeger(l, -1);
+						break;
+					case StructProperty::UChar:
+						*((unsigned char*)(((unsigned char*)&luacon_sim->elements[id])+offset)) = lua_tointeger(l, -1);
+						break;
+					case StructProperty::String:
+						*((char**)(((unsigned char*)&luacon_sim->elements[id])+offset)) = strdup(lua_tostring(l, -1));
+						break;
+					case StructProperty::Colour:
+#if PIXELSIZE == 4
+						*((unsigned int*)(((unsigned char*)&luacon_sim->elements[id])+offset)) = lua_tointeger(l, -1);
+#else
+						*((unsigned short*)(((unsigned char*)&luacon_sim->elements[id])+offset)) = lua_tointeger(l, -1);
+#endif
+						break;
+				}
+				lua_pop(l, 1);
+			}
+		}
+
+		lua_getfield(l, -1, "Update");
+		if(lua_type(l, -1) == LUA_TFUNCTION)
+		{
+			lua_el_func[id] = luaL_ref(l, LUA_REGISTRYINDEX);
+			luacon_sim->elements[id].Update = &luacon_elementReplacement;
+		}
+		else if(lua_type(l, -1) == LUA_TBOOLEAN && !lua_toboolean(l, -1))
+		{
+			lua_el_func[id] = 0;
+			luacon_sim->elements[id].Update = NULL;
+		}
+		else
+			lua_pop(l, 1);
+
+		lua_getfield(l, -1, "Graphics");
+		if(lua_type(l, -1) == LUA_TFUNCTION)
+		{
+			lua_el_func[id] = luaL_ref(l, LUA_REGISTRYINDEX);
+			luacon_sim->elements[id].Graphics = &luacon_graphicsReplacement;
+		}
+		else if(lua_type(l, -1) == LUA_TBOOLEAN && !lua_toboolean(l, -1))
+		{
+			lua_el_func[id] = 0;
+			luacon_sim->elements[id].Graphics = NULL;
+		}
+		else
+			lua_pop(l, 1);
+
+		luacon_model->BuildMenus();
+		luacon_sim->init_can_move();
+		std::fill(luacon_ren->graphicscache, luacon_ren->graphicscache+PT_NUM, gcache_item());
+
+		lua_pop(l, 1);
+		return 0;
+	}
+	else
+	{
+		std::vector<StructProperty> properties = Element::GetProperties();
+		//Write values from native data to a table
+		lua_newtable(l);
+		for(std::vector<StructProperty>::iterator iter = properties.begin(), end = properties.end(); iter != end; ++iter)
+		{
+			intptr_t offset = (*iter).Offset;
+			switch((*iter).Type)
+			{
+				case StructProperty::ParticleType:
+				case StructProperty::Integer:
+					lua_pushinteger(l, *((int*)(((unsigned char*)&luacon_sim->elements[id])+offset)));
+					break;
+				case StructProperty::UInteger:
+					lua_pushinteger(l, *((unsigned int*)(((unsigned char*)&luacon_sim->elements[id])+offset)));
+					break;
+				case StructProperty::Float:
+					lua_pushnumber(l, *((float*)(((unsigned char*)&luacon_sim->elements[id])+offset)));
+					break;
+				case StructProperty::Char:
+					lua_pushinteger(l, *((char*)(((unsigned char*)&luacon_sim->elements[id])+offset)));
+					break;
+				case StructProperty::UChar:
+					lua_pushinteger(l, *((unsigned char*)(((unsigned char*)&luacon_sim->elements[id])+offset)));
+					break;
+				case StructProperty::String:
+					lua_pushstring(l, *((char**)(((unsigned char*)&luacon_sim->elements[id])+offset)));
+					break;
+				case StructProperty::Colour:
+#if PIXELSIZE == 4
+					lua_pushinteger(l, *((unsigned int*)(((unsigned char*)&luacon_sim->elements[id])+offset)));
+#else
+					lua_pushinteger(l, *((unsigned short*)(((unsigned char*)&luacon_sim->elements[id])+offset)));
+#endif
+					break;
+				default:
+					lua_pushnil(l);
+			}
+			lua_setfield(l, -2, (*iter).Name.c_str());
+		}
+		return 1;
+	}
+}
+
+int LuaScriptInterface::elements_property(lua_State * l)
+{
+	int args = lua_gettop(l);
+	int id;
+	std::string propertyName;
+	luaL_checktype(l, 1, LUA_TNUMBER);
+	id = lua_tointeger(l, 1);
+	luaL_checktype(l, 2, LUA_TSTRING);
+	propertyName = std::string(lua_tostring(l, 2));
+
+	if(id < 0 || id >= PT_NUM || !luacon_sim->elements[id].Enabled)
+		return luaL_error(l, "Invalid element");
+
+
+
+	if(args > 2)
+	{
+		StructProperty property;
+		bool propertyFound = false;
+		std::vector<StructProperty> properties = Element::GetProperties();
+
+		for(std::vector<StructProperty>::iterator iter = properties.begin(), end = properties.end(); iter != end; ++iter)
+		{
+			if((*iter).Name == propertyName)
+			{
+				property = *iter;
+				propertyFound = true;
+				break;
+			}
+		}
+
+		if(propertyFound)
+		{
+			if(lua_type(l, 3) != LUA_TNIL)
+			{
+				intptr_t offset = property.Offset;
+				switch(property.Type)
+				{
+					case StructProperty::ParticleType:
+					case StructProperty::Integer:
+						*((int*)(((unsigned char*)&luacon_sim->elements[id])+offset)) = lua_tointeger(l, 3);
+						break;
+					case StructProperty::UInteger:
+						*((unsigned int*)(((unsigned char*)&luacon_sim->elements[id])+offset)) = lua_tointeger(l, 3);
+						break;
+					case StructProperty::Float:
+						*((float*)(((unsigned char*)&luacon_sim->elements[id])+offset)) = lua_tonumber(l, 3);
+						break;
+					case StructProperty::Char:
+						*((char*)(((unsigned char*)&luacon_sim->elements[id])+offset)) = lua_tointeger(l, 3);
+						break;
+					case StructProperty::UChar:
+						*((unsigned char*)(((unsigned char*)&luacon_sim->elements[id])+offset)) = lua_tointeger(l, 3);
+						break;
+					case StructProperty::String:
+						*((char**)(((unsigned char*)&luacon_sim->elements[id])+offset)) = strdup(lua_tostring(l, 3));
+						break;
+					case StructProperty::Colour:
+	#if PIXELSIZE == 4
+						*((unsigned int*)(((unsigned char*)&luacon_sim->elements[id])+offset)) = lua_tointeger(l, 3);
+	#else
+						*((unsigned short*)(((unsigned char*)&luacon_sim->elements[id])+offset)) = lua_tointeger(l, 3);
+	#endif
+						break;
+				}
+			}
+
+			luacon_model->BuildMenus();
+			luacon_sim->init_can_move();
+			std::fill(luacon_ren->graphicscache, luacon_ren->graphicscache+PT_NUM, gcache_item());
+
+			return 0;
+		}
+		else if(propertyName == "Update")
+		{
+			if(lua_type(l, 3) == LUA_TFUNCTION)
+			{
+				lua_pushvalue(l, 3);
+				lua_el_func[id] = luaL_ref(l, LUA_REGISTRYINDEX);
+				luacon_sim->elements[id].Update = &luacon_elementReplacement;
+			}
+			else if(lua_type(l, 3) == LUA_TBOOLEAN && !lua_toboolean(l, 3))
+			{
+				lua_el_func[id] = 0;
+				luacon_sim->elements[id].Update = NULL;
+			}
+		}
+		else if(propertyName == "Graphics")
+		{
+			if(lua_type(l, 3) == LUA_TFUNCTION)
+			{
+				lua_pushvalue(l, 3);
+				lua_el_func[id] = luaL_ref(l, LUA_REGISTRYINDEX);
+				luacon_sim->elements[id].Graphics = &luacon_graphicsReplacement;
+			}
+			else if(lua_type(l, 3) == LUA_TBOOLEAN && !lua_toboolean(l, -1))
+			{
+				lua_el_func[id] = 0;
+				luacon_sim->elements[id].Graphics = NULL;
+			}
+			std::fill(luacon_ren->graphicscache, luacon_ren->graphicscache+PT_NUM, gcache_item());
+		}
+		else
+			return luaL_error(l, "Invalid element property");
+	}
+	else
+	{
+		StructProperty property;
+		bool propertyFound = false;
+		std::vector<StructProperty> properties = Element::GetProperties();
+
+		for(std::vector<StructProperty>::iterator iter = properties.begin(), end = properties.end(); iter != end; ++iter)
+		{
+			if((*iter).Name == propertyName)
+			{
+				property = *iter;
+				propertyFound = true;
+				break;
+			}
+		}
+
+		if(propertyFound)
+		{
+			intptr_t offset = property.Offset;
+			switch(property.Type)
+			{
+				case StructProperty::ParticleType:
+				case StructProperty::Integer:
+					lua_pushinteger(l, *((int*)(((unsigned char*)&luacon_sim->elements[id])+offset)));
+					break;
+				case StructProperty::UInteger:
+					lua_pushinteger(l, *((unsigned int*)(((unsigned char*)&luacon_sim->elements[id])+offset)));
+					break;
+				case StructProperty::Float:
+					lua_pushnumber(l, *((float*)(((unsigned char*)&luacon_sim->elements[id])+offset)));
+					break;
+				case StructProperty::Char:
+					lua_pushinteger(l, *((char*)(((unsigned char*)&luacon_sim->elements[id])+offset)));
+					break;
+				case StructProperty::UChar:
+					lua_pushinteger(l, *((unsigned char*)(((unsigned char*)&luacon_sim->elements[id])+offset)));
+					break;
+				case StructProperty::String:
+					lua_pushstring(l, *((char**)(((unsigned char*)&luacon_sim->elements[id])+offset)));
+					break;
+				case StructProperty::Colour:
+#if PIXELSIZE == 4
+					lua_pushinteger(l, *((unsigned int*)(((unsigned char*)&luacon_sim->elements[id])+offset)));
+#else
+					lua_pushinteger(l, *((unsigned short*)(((unsigned char*)&luacon_sim->elements[id])+offset)));
+#endif
+					break;
+				default:
+					lua_pushnil(l);
+			}
+			return 1;
+		}
+		else
+			return luaL_error(l, "Invalid element property");
+	}
+}
+
+int LuaScriptInterface::elements_free(lua_State * l)
+{
+	int id;
+	luaL_checktype(l, 1, LUA_TNUMBER);
+	id = lua_tointeger(l, 1);
+	
+	if(id < 0 || id >= PT_NUM || !luacon_sim->elements[id].Enabled)
+		return luaL_error(l, "Invalid element");
+
+	std::string identifier = luacon_sim->elements[id].Identifier;
+	if(identifier.length()>7 && identifier.substr(0, 7) == "DEFAULT")
+		return luaL_error(l, "Cannot free default elements");
+
+	luacon_sim->elements[id].Enabled = false;
+
+	lua_getglobal(l, "elements");
+	lua_pushnil(l);
+	lua_setfield(l, -2, identifier.c_str());
+	lua_pop(l, 1);
+
+	return 0;
+}
+
 
 bool LuaScriptInterface::OnBrushChanged(int brushType, int rx, int ry)
 {
@@ -936,10 +1641,20 @@ int luatpt_test(lua_State* l)
 int luatpt_getelement(lua_State *l)
 {
 	int t;
-	char * name = (char*)luaL_optstring(l, 1, "dust");
-	if ((t = luacon_ci->GetParticleType(name))==-1)
-		return luaL_error(l,"Unrecognised element '%s'", name);
-	lua_pushinteger(l, t);
+	if(lua_isnumber(l, 1))
+	{
+		t = luaL_optint(l, 1, 1);
+		if (t<0 || t>=PT_NUM)
+			return luaL_error(l, "Unrecognised element number '%d'", t);
+		lua_pushstring(l, luacon_sim->elements[t].Name);
+	}
+	else
+	{
+		char* name = (char*)luaL_optstring(l, 1, "dust");
+		if ((t = luacon_ci->GetParticleType(name))==-1)
+			return luaL_error(l, "Unrecognised element '%s'", name);
+		lua_pushinteger(l, t);
+	}
 	return 1;
 }
 
@@ -1126,10 +1841,19 @@ int luatpt_setconsole(lua_State* l)
 
 int luatpt_log(lua_State* l)
 {
-	if((*luacon_currentCommand) && !(*luacon_lastError).length())
-		(*luacon_lastError) = luaL_optstring(l, 1, "");
-	else
-		luacon_ci->Log(CommandInterface::LogNotice, luaL_optstring(l, 1, ""));
+	int args = lua_gettop(l);
+	for(int i = 1; i <= args; i++)
+	{
+		if((*luacon_currentCommand))
+		{
+			if(!(*luacon_lastError).length())
+				(*luacon_lastError) = luaL_optstring(l, i, "");
+			else
+				(*luacon_lastError) += ", " + std::string(luaL_optstring(l, i, ""));
+		}
+		else
+			luacon_ci->Log(CommandInterface::LogNotice, luaL_optstring(l, i, ""));
+	}
 	return 0;
 }
 

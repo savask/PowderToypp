@@ -17,7 +17,7 @@
 
 //VersionInfoStart
 #ifndef SAVE_VERSION
-#define SAVE_VERSION 82
+#define SAVE_VERSION 83
 #endif
 
 #ifndef MINOR_VERSION
@@ -32,8 +32,10 @@
 #define SNAPSHOT_ID 0
 #endif
 
+#ifndef BETA
 #define BETA
 #define SNAPSHOT
+#endif
 //VersionInfoEnd
 
 #if defined(SNAPSHOT)

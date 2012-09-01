@@ -13,7 +13,7 @@
 
 struct StructProperty
 {
-	enum PropertyType { ParticleType, Colour, Integer, UInteger, Float, String };
+	enum PropertyType { ParticleType, Colour, Integer, UInteger, Float, String, Char, UChar };
 	std::string Name;
 	PropertyType Type;
 	intptr_t Offset;
@@ -22,6 +22,14 @@ struct StructProperty
 	Name(name),
 	Type(type),
 	Offset(offset)
+	{
+		
+	}
+
+	StructProperty():
+	Name(""),
+	Type(Char),
+	Offset(0)
 	{
 		
 	}
