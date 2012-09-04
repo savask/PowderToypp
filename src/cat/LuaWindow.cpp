@@ -6,9 +6,11 @@ extern "C"
 }
 
 #include <iostream>
+#include "LuaScriptInterface.h"
 #include "LuaWindow.h"
 #include "LuaButton.h"
 #include "LuaLabel.h"
+#include "LuaTextbox.h"
 #include "interface/Button.h"
 #include "interface/Label.h"
 #include "interface/Window.h"
@@ -59,6 +61,11 @@ LuaWindow::LuaWindow(lua_State * l) :
 	int sizeX = luaL_optinteger(l, 3, 10);
 	int sizeY = luaL_optinteger(l, 4, 10);
 
+	lua_pushstring(l, "Luacon_ci");
+	lua_gettable(l, LUA_REGISTRYINDEX);
+	ci = (LuaScriptInterface*)lua_touserdata(l, -1);
+	lua_pop(l, 1);
+
 	class DrawnWindow : public ui::Window
 	{
 		LuaWindow * luaWindow;
@@ -97,6 +104,8 @@ int LuaWindow::addComponent(lua_State * l)
 		component = Luna<LuaButton>::get(luaComponent)->GetComponent();
 	else if(luaComponent = Luna<LuaLabel>::tryGet(l, 1))
 		component = Luna<LuaLabel>::get(luaComponent)->GetComponent();
+	else if(luaComponent = Luna<LuaTextbox>::tryGet(l, 1))
+		component = Luna<LuaTextbox>::get(luaComponent)->GetComponent();
 	else
 		luaL_typerror(l, 1, "Component");
 	if(component)
@@ -145,10 +154,9 @@ void LuaWindow::triggerOnInitialized()
 	if(onInitializedFunction)
 	{
 		lua_rawgeti(l, LUA_REGISTRYINDEX, onInitializedFunction);
-		lua_pushinteger(l, 1); //Self placeholder
-		if(lua_pcall(l, 1, 0, 0))
+		if(lua_pcall(l, 0, 0, 0))
 		{
-			//Log error somwhere
+			ci->Log(CommandInterface::LogError, lua_tostring(l, -1));
 		}
 	}
 }
@@ -158,10 +166,9 @@ void LuaWindow::triggerOnExit()
 	if(onExitFunction)
 	{
 		lua_rawgeti(l, LUA_REGISTRYINDEX, onExitFunction);
-		lua_pushinteger(l, 1); //Self placeholder
-		if(lua_pcall(l, 1, 0, 0))
+		if(lua_pcall(l, 0, 0, 0))
 		{
-			//Log error somwhere
+			ci->Log(CommandInterface::LogError, lua_tostring(l, -1));
 		}
 	}
 }
@@ -171,11 +178,10 @@ void LuaWindow::triggerOnTick(float dt)
 	if(onTickFunction)
 	{
 		lua_rawgeti(l, LUA_REGISTRYINDEX, onTickFunction);
-		lua_pushinteger(l, 1); //Self placeholder
 		lua_pushnumber(l, dt);
-		if(lua_pcall(l, 2, 0, 0))
+		if(lua_pcall(l, 1, 0, 0))
 		{
-			//Log error somwhere
+			ci->Log(CommandInterface::LogError, lua_tostring(l, -1));
 		}
 	}
 }
@@ -185,10 +191,9 @@ void LuaWindow::triggerOnDraw()
 	if(onDrawFunction)
 	{
 		lua_rawgeti(l, LUA_REGISTRYINDEX, onDrawFunction);
-		lua_pushinteger(l, 1); //Self placeholder
-		if(lua_pcall(l, 1, 0, 0))
+		if(lua_pcall(l, 0, 0, 0))
 		{
-			//Log error somwhere
+			ci->Log(CommandInterface::LogError, lua_tostring(l, -1));
 		}
 	}
 }
@@ -198,10 +203,9 @@ void LuaWindow::triggerOnFocus()
 	if(onFocusFunction)
 	{
 		lua_rawgeti(l, LUA_REGISTRYINDEX, onFocusFunction);
-		lua_pushinteger(l, 1); //Self placeholder
-		if(lua_pcall(l, 1, 0, 0))
+		if(lua_pcall(l, 0, 0, 0))
 		{
-			//Log error somwhere
+			ci->Log(CommandInterface::LogError, lua_tostring(l, -1));
 		}
 	}
 }
@@ -211,10 +215,9 @@ void LuaWindow::triggerOnBlur()
 	if(onBlurFunction)
 	{
 		lua_rawgeti(l, LUA_REGISTRYINDEX, onBlurFunction);
-		lua_pushinteger(l, 1); //Self placeholder
-		if(lua_pcall(l, 1, 0, 0))
+		if(lua_pcall(l, 0, 0, 0))
 		{
-			//Log error somwhere
+			ci->Log(CommandInterface::LogError, lua_tostring(l, -1));
 		}
 	}
 }
@@ -224,10 +227,9 @@ void LuaWindow::triggerOnTryExit()
 	if(onTryExitFunction)
 	{
 		lua_rawgeti(l, LUA_REGISTRYINDEX, onTryExitFunction);
-		lua_pushinteger(l, 1); //Self placeholder
-		if(lua_pcall(l, 1, 0, 0))
+		if(lua_pcall(l, 0, 0, 0))
 		{
-			//Log error somwhere
+			ci->Log(CommandInterface::LogError, lua_tostring(l, -1));
 		}
 	}
 }
@@ -237,10 +239,9 @@ void LuaWindow::triggerOnTryOkay()
 	if(onTryOkayFunction)
 	{
 		lua_rawgeti(l, LUA_REGISTRYINDEX, onTryOkayFunction);
-		lua_pushinteger(l, 1); //Self placeholder
-		if(lua_pcall(l, 1, 0, 0))
+		if(lua_pcall(l, 0, 0, 0))
 		{
-			//Log error somwhere
+			ci->Log(CommandInterface::LogError, lua_tostring(l, -1));
 		}
 	}
 }
@@ -250,14 +251,13 @@ void LuaWindow::triggerOnMouseMove(int x, int y, int dx, int dy)
 	if(onMouseMoveFunction)
 	{
 		lua_rawgeti(l, LUA_REGISTRYINDEX, onMouseMoveFunction);
-		lua_pushinteger(l, 0); //Self placeholder
 		lua_pushinteger(l, x);
 		lua_pushinteger(l, y);
 		lua_pushinteger(l, dx);
 		lua_pushinteger(l, dy);
-		if(lua_pcall(l, 5, 0, 0))
+		if(lua_pcall(l, 4, 0, 0))
 		{
-			//Log error somwhere
+			ci->Log(CommandInterface::LogError, lua_tostring(l, -1));
 		}
 	}
 }
@@ -267,13 +267,12 @@ void LuaWindow::triggerOnMouseDown(int x, int y, unsigned button)
 	if(onMouseDownFunction)
 	{
 		lua_rawgeti(l, LUA_REGISTRYINDEX, onMouseDownFunction);
-		lua_pushinteger(l, 0); //Self placeholder
 		lua_pushinteger(l, x);
 		lua_pushinteger(l, y);
 		lua_pushinteger(l, button);
-		if(lua_pcall(l, 4, 0, 0))
+		if(lua_pcall(l, 3, 0, 0))
 		{
-			//Log error somwhere
+			ci->Log(CommandInterface::LogError, lua_tostring(l, -1));
 		}
 	}
 }
@@ -283,13 +282,12 @@ void LuaWindow::triggerOnMouseUp(int x, int y, unsigned button)
 	if(onMouseUpFunction)
 	{
 		lua_rawgeti(l, LUA_REGISTRYINDEX, onMouseUpFunction);
-		lua_pushinteger(l, 0); //Self placeholder
 		lua_pushinteger(l, x);
 		lua_pushinteger(l, y);
 		lua_pushinteger(l, button);
-		if(lua_pcall(l, 4, 0, 0))
+		if(lua_pcall(l, 3, 0, 0))
 		{
-			//Log error somwhere
+			ci->Log(CommandInterface::LogError, lua_tostring(l, -1));
 		}
 	}
 }
@@ -299,13 +297,12 @@ void LuaWindow::triggerOnMouseWheel(int x, int y, int d)
 	if(onMouseWheelFunction)
 	{
 		lua_rawgeti(l, LUA_REGISTRYINDEX, onMouseWheelFunction);
-		lua_pushinteger(l, 0); //Self placeholder
 		lua_pushinteger(l, x);
 		lua_pushinteger(l, y);
 		lua_pushinteger(l, d);
-		if(lua_pcall(l, 4, 0, 0))
+		if(lua_pcall(l, 3, 0, 0))
 		{
-			//Log error somwhere
+			ci->Log(CommandInterface::LogError, lua_tostring(l, -1));
 		}
 	}
 }
@@ -315,15 +312,14 @@ void LuaWindow::triggerOnKeyPress(int key, Uint16 character, bool shift, bool ct
 	if(onKeyPressFunction)
 	{
 		lua_rawgeti(l, LUA_REGISTRYINDEX, onKeyPressFunction);
-		lua_pushinteger(l, 0); //Self placeholder
 		lua_pushinteger(l, key);
 		lua_pushinteger(l, character);
 		lua_pushboolean(l, shift);
 		lua_pushboolean(l, ctrl);
 		lua_pushboolean(l, alt);
-		if(lua_pcall(l, 6, 0, 0))
+		if(lua_pcall(l, 5, 0, 0))
 		{
-			//Log error somwhere
+			ci->Log(CommandInterface::LogError, lua_tostring(l, -1));
 		}
 	}
 }
@@ -333,15 +329,14 @@ void LuaWindow::triggerOnKeyRelease(int key, Uint16 character, bool shift, bool 
 	if(onKeyReleaseFunction)
 	{
 		lua_rawgeti(l, LUA_REGISTRYINDEX, onKeyReleaseFunction);
-		lua_pushinteger(l, 0); //Self placeholder
 		lua_pushinteger(l, key);
 		lua_pushinteger(l, character);
 		lua_pushboolean(l, shift);
 		lua_pushboolean(l, ctrl);
 		lua_pushboolean(l, alt);
-		if(lua_pcall(l, 6, 0, 0))
+		if(lua_pcall(l, 5, 0, 0))
 		{
-			//Log error somwhere
+			ci->Log(CommandInterface::LogError, lua_tostring(l, -1));
 		}
 	}
 }

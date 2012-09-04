@@ -988,8 +988,6 @@ void GameView::OnMouseMove(int x, int y, int dx, int dy)
 
 void GameView::OnMouseDown(int x, int y, unsigned button)
 {
-	if(altBehaviour)
-		button = BUTTON_MIDDLE;
 	if(selectMode!=SelectNone)
 	{
 		if(button==BUTTON_LEFT)
@@ -1023,9 +1021,6 @@ void GameView::OnMouseDown(int x, int y, unsigned button)
 
 void GameView::OnMouseUp(int x, int y, unsigned button)
 {
-	if(altBehaviour)
-		button = BUTTON_MIDDLE;
-
 	if(selectMode!=SelectNone)
 	{
 		if(button==BUTTON_LEFT)
@@ -1944,7 +1939,11 @@ void GameView::OnDraw()
 			}
 			else
 			{
-				sampleInfo << c->ElementResolve(sample.particle.type) << ", Pressure: " << std::fixed << sample.AirPressure;
+				if(sample.particle.type == PT_LAVA && sample.particle.ctype > 0 && sample.particle.ctype < PT_NUM)
+					sampleInfo << "Molten " << c->ElementResolve(sample.particle.ctype);
+				else
+					sampleInfo << c->ElementResolve(sample.particle.type);
+				sampleInfo << ", Pressure: " << std::fixed << sample.AirPressure;
 				sampleInfo << ", Temp: " << std::fixed << sample.particle.temp -273.15f;
 			}
 			if(sample.particle.type == PT_PHOT)

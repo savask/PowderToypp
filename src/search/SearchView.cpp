@@ -260,7 +260,10 @@ void SearchView::Search(std::string query)
 
 void SearchView::NotifySortChanged(SearchModel * sender)
 {
-    sortButton->SetText("Show "+sender->GetSort());
+	if(sender->GetSort() == "best")
+ 	   sortButton->SetText("By votes");
+ 	else
+ 		sortButton->SetText("By date");
 }
 
 void SearchView::NotifyShowOwnChanged(SearchModel * sender)
@@ -378,7 +381,7 @@ void SearchView::CheckAccess()
 	}
 }
 
-void SearchView::NotifySaveListChanged(SearchModel * sender)
+void SearchView::NotifyTagListChanged(SearchModel * sender)
 {
 	int i = 0;
 	int buttonWidth, buttonHeight, saveX = 0, saveY = 0, savesX = 5, savesY = 4, buttonPadding = 1;
@@ -387,9 +390,7 @@ void SearchView::NotifySaveListChanged(SearchModel * sender)
 	int tagWidth, tagHeight, tagX = 0, tagY = 0, tagsX = 6, tagsY = 4, tagPadding = 1;
 	int tagAreaWidth, tagAreaHeight, tagXOffset, tagYOffset;
 
-	vector<SaveInfo*> saves = sender->GetSaveList();
 	vector<pair<string, int> > tags = sender->GetTagList();
-	//string messageOfTheDay = sender->GetMessageOfTheDay();
 
 	RemoveComponent(motdLabel);
 	motdLabel->SetParentWindow(NULL);
@@ -397,121 +398,51 @@ void SearchView::NotifySaveListChanged(SearchModel * sender)
 	RemoveComponent(tagsLabel);
 	tagsLabel->SetParentWindow(NULL);
 
-	Client::Ref().ClearThumbnailRequests();
-	for(i = 0; i < saveButtons.size(); i++)
-	{
-		RemoveComponent(saveButtons[i]);
-		delete saveButtons[i];
-	}
 	for(i = 0; i < tagButtons.size(); i++)
 	{
 		RemoveComponent(tagButtons[i]);
 		delete tagButtons[i];
 	}
-	saveButtons.clear();
 	tagButtons.clear();
-	if(!sender->GetSavesLoaded())
-	{
-		nextButton->Enabled = false;
-		previousButton->Enabled = false;
-	}
-	else
-	{
-		nextButton->Enabled = true;
-		previousButton->Enabled = true;
-	}
-	if(!saves.size())
-	{
-		loadingSpinner->Visible = false;
-		if(!errorLabel)
-		{
-			errorLabel = new ui::Label(ui::Point(((XRES+BARSIZE)/2)-100, ((YRES+MENUSIZE)/2)-6), ui::Point(200, 12), "Error");
-			AddComponent(errorLabel);
-		}
-		if(!sender->GetSavesLoaded())
-		{
-			errorLabel->SetText("Loading...");
-			loadingSpinner->Visible = true;
-		}
-		else
-		{
-			if(sender->GetLastError().length())
-				errorLabel->SetText("\bo" + sender->GetLastError());
-			else
-				errorLabel->SetText("\boNo saves found");
-		}
-	}
-	else
-	{
-		loadingSpinner->Visible = false;
-		if(errorLabel)
-		{
-			RemoveComponent(errorLabel);
-			delete errorLabel;
-			errorLabel = NULL;
-		}
 
-		buttonYOffset = 28;
-		buttonXOffset = buttonPadding;
-		buttonAreaWidth = Size.X;
+	buttonYOffset = 28;
+	buttonXOffset = buttonPadding;
+	buttonAreaWidth = Size.X;
+	buttonAreaHeight = Size.Y - buttonYOffset - 18;
+
+	if(sender->GetShowTags())
+	{
+		buttonYOffset += (buttonAreaHeight/savesY) - buttonPadding*2;
 		buttonAreaHeight = Size.Y - buttonYOffset - 18;
+		savesY--;
 
-		if(tags.size())
+		tagXOffset = tagPadding;
+		tagYOffset = 60;
+		tagAreaWidth = Size.X;
+		tagAreaHeight = ((buttonAreaHeight/savesY) - buttonPadding*2)-(tagYOffset-28)-5;
+		tagWidth = (tagAreaWidth/tagsX) - tagPadding*2;
+		tagHeight = (tagAreaHeight/tagsY) - tagPadding*2;
+
+		AddComponent(tagsLabel);
+		tagsLabel->Position.Y = tagYOffset-16;
+
+		AddComponent(motdLabel);
+		motdLabel->Position.Y = tagYOffset-28;
+	}
+
+	class TagAction: public ui::ButtonAction
+	{
+		SearchView * v;
+		std::string tag;
+	public:
+		TagAction(SearchView * v, std::string tag) : v(v), tag(tag) {}
+		virtual void ActionCallback(ui::Button * sender)
 		{
-			buttonYOffset += (buttonAreaHeight/savesY) - buttonPadding*2;
-			buttonAreaHeight = Size.Y - buttonYOffset - 18;
-			savesY--;
-
-			tagXOffset = tagPadding;
-			tagYOffset = 60;
-			tagAreaWidth = Size.X;
-			tagAreaHeight = ((buttonAreaHeight/savesY) - buttonPadding*2)-(tagYOffset-28)-5;
-			tagWidth = (tagAreaWidth/tagsX) - tagPadding*2;
-			tagHeight = (tagAreaHeight/tagsY) - tagPadding*2;
-
-			AddComponent(tagsLabel);
-			tagsLabel->Position.Y = tagYOffset-16;
-
-			AddComponent(motdLabel);
-			motdLabel->Position.Y = tagYOffset-28;
+			v->Search(tag);
 		}
-
-		buttonWidth = (buttonAreaWidth/savesX) - buttonPadding*2;
-		buttonHeight = (buttonAreaHeight/savesY) - buttonPadding*2;
-
-
-
-		class SaveOpenAction: public ui::SaveButtonAction
-		{
-			SearchView * v;
-		public:
-			SaveOpenAction(SearchView * _v) { v = _v; }
-			virtual void ActionCallback(ui::SaveButton * sender)
-			{
-				v->c->OpenSave(sender->GetSave()->GetID());
-			}
-			virtual void SelectedCallback(ui::SaveButton * sender)
-			{
-				v->c->Selected(sender->GetSave()->GetID(), sender->GetSelected());
-			}
-			virtual void AuthorActionCallback(ui::SaveButton * sender)
-			{
-				v->Search("user:"+sender->GetSave()->GetUserName());
-			}
-		};
-
-		class TagAction: public ui::ButtonAction
-		{
-			SearchView * v;
-			std::string tag;
-		public:
-			TagAction(SearchView * v, std::string tag) : v(v), tag(tag) {}
-			virtual void ActionCallback(ui::Button * sender)
-			{
-				v->Search(tag);
-			}
-		};
-
+	};
+	if(sender->GetShowTags())
+	{
 		for(i = 0; i < tags.size(); i++)
 		{
 			int maxTagVotes = tags[0].second;
@@ -552,6 +483,113 @@ void SearchView::NotifySaveListChanged(SearchModel * sender)
 			tagX++;
 
 		}
+	}
+}
+
+void SearchView::NotifySaveListChanged(SearchModel * sender)
+{
+	int i = 0;
+	int buttonWidth, buttonHeight, saveX = 0, saveY = 0, savesX = 5, savesY = 4, buttonPadding = 1;
+	int buttonAreaWidth, buttonAreaHeight, buttonXOffset, buttonYOffset;
+
+	int tagWidth, tagHeight, tagX = 0, tagY = 0, tagsX = 6, tagsY = 4, tagPadding = 1;
+	int tagAreaWidth, tagAreaHeight, tagXOffset, tagYOffset;
+
+	vector<SaveInfo*> saves = sender->GetSaveList();
+	//string messageOfTheDay = sender->GetMessageOfTheDay();
+
+	Client::Ref().ClearThumbnailRequests();
+	for(i = 0; i < saveButtons.size(); i++)
+	{
+		RemoveComponent(saveButtons[i]);
+		delete saveButtons[i];
+	}
+	saveButtons.clear();
+	if(!sender->GetSavesLoaded())
+	{
+		nextButton->Enabled = false;
+		previousButton->Enabled = false;
+		sortButton->Enabled = false;
+	}
+	else
+	{
+		sortButton->Enabled = true;
+		nextButton->Enabled = true;
+		previousButton->Enabled = true;
+	}
+	if(!saves.size())
+	{
+		loadingSpinner->Visible = false;
+		if(!errorLabel)
+		{
+			errorLabel = new ui::Label(ui::Point(((XRES+BARSIZE)/2)-100, ((YRES+MENUSIZE)/2)-6), ui::Point(200, 12), "Error");
+			AddComponent(errorLabel);
+		}
+		if(!sender->GetSavesLoaded())
+		{
+			errorLabel->SetText("Loading...");
+			loadingSpinner->Visible = true;
+		}
+		else
+		{
+			if(sender->GetLastError().length())
+				errorLabel->SetText("\bo" + sender->GetLastError());
+			else
+				errorLabel->SetText("\boNo saves found");
+		}
+	}
+	else
+	{
+		loadingSpinner->Visible = false;
+		if(errorLabel)
+		{
+			RemoveComponent(errorLabel);
+			delete errorLabel;
+			errorLabel = NULL;
+		}
+
+		buttonYOffset = 28;
+		buttonXOffset = buttonPadding;
+		buttonAreaWidth = Size.X;
+		buttonAreaHeight = Size.Y - buttonYOffset - 18;
+
+		if(sender->GetShowTags())
+		{
+			buttonYOffset += (buttonAreaHeight/savesY) - buttonPadding*2;
+			buttonAreaHeight = Size.Y - buttonYOffset - 18;
+			savesY--;
+
+			tagXOffset = tagPadding;
+			tagYOffset = 60;
+			tagAreaWidth = Size.X;
+			tagAreaHeight = ((buttonAreaHeight/savesY) - buttonPadding*2)-(tagYOffset-28)-5;
+			tagWidth = (tagAreaWidth/tagsX) - tagPadding*2;
+			tagHeight = (tagAreaHeight/tagsY) - tagPadding*2;
+		}
+
+		buttonWidth = (buttonAreaWidth/savesX) - buttonPadding*2;
+		buttonHeight = (buttonAreaHeight/savesY) - buttonPadding*2;
+
+
+
+		class SaveOpenAction: public ui::SaveButtonAction
+		{
+			SearchView * v;
+		public:
+			SaveOpenAction(SearchView * _v) { v = _v; }
+			virtual void ActionCallback(ui::SaveButton * sender)
+			{
+				v->c->OpenSave(sender->GetSave()->GetID());
+			}
+			virtual void SelectedCallback(ui::SaveButton * sender)
+			{
+				v->c->Selected(sender->GetSave()->GetID(), sender->GetSelected());
+			}
+			virtual void AuthorActionCallback(ui::SaveButton * sender)
+			{
+				v->Search("user:"+sender->GetSave()->GetUserName());
+			}
+		};
 		for(i = 0; i < saves.size(); i++)
 		{
 			if(saveX == savesX)
