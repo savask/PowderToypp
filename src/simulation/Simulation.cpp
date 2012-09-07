@@ -1,6 +1,11 @@
 //#include <cstdlib>
 #include <cmath>
+#include <math.h>
+#if !defined(_MSC_VER)
 #include <strings.h>
+#else
+#include <windows.h>
+#endif
 #include "Config.h"
 #include "Simulation.h"
 #include "Elements.h"
@@ -413,6 +418,10 @@ SimulationSample Simulation::Get(int x, int y)
 	{
 		sample.particle = parts[photons[y][x]>>8];
 		sample.ParticleID = photons[y][x]>>8;
+	}
+	if (bmap[y/CELL][x/CELL])
+	{
+		sample.WallType = bmap[y/CELL][x/CELL];
 	}
 	sample.AirPressure = pv[y/CELL][x/CELL];
 	sample.AirTemperature = hv[y/CELL][x/CELL];
@@ -848,6 +857,7 @@ void Simulation::ApplyDecoration(int x, int y, int colR_, int colG_, int colB_, 
 {
 	int rp;
 	float tr, tg, tb, ta, colR = colR_, colG = colG_, colB = colB_, colA = colA_;
+	float strength = 0.01f;
 	rp = pmap[y][x];
 	if (!rp)
 		return;
@@ -873,52 +883,54 @@ void Simulation::ApplyDecoration(int x, int y, int colR_, int colG_, int colB_, 
 	}
 	else if (mode == DECO_ADD)
 	{
-		ta += (colA*0.1f)*colA;
-		tr += (colR*0.1f)*colA;
-		tg += (colG*0.1f)*colA;
-		tb += (colB*0.1f)*colA;
+		ta += (colA*strength)*colA;
+		tr += (colR*strength)*colA;
+		tg += (colG*strength)*colA;
+		tb += (colB*strength)*colA;
 	}
 	else if (mode == DECO_SUBTRACT)
 	{
-		ta -= (colA*0.1f)*colA;
-		tr -= (colR*0.1f)*colA;
-		tg -= (colG*0.1f)*colA;
-		tb -= (colB*0.1f)*colA;
+		ta -= (colA*strength)*colA;
+		tr -= (colR*strength)*colA;
+		tg -= (colG*strength)*colA;
+		tb -= (colB*strength)*colA;
 	}
 	else if (mode == DECO_MULTIPLY)
 	{
-		tr *= 1.0f+(colR*0.1f)*colA;
-		tg *= 1.0f+(colG*0.1f)*colA;
-		tb *= 1.0f+(colB*0.1f)*colA;
+		tr *= 1.0f+(colR*strength)*colA;
+		tg *= 1.0f+(colG*strength)*colA;
+		tb *= 1.0f+(colB*strength)*colA;
 	}
 	else if (mode == DECO_DIVIDE)
 	{
-		tr /= 1.0f+(colR*0.1f)*colA;
-		tg /= 1.0f+(colG*0.1f)*colA;
-		tb /= 1.0f+(colB*0.1f)*colA;
+		tr /= 1.0f+(colR*strength)*colA;
+		tg /= 1.0f+(colG*strength)*colA;
+		tb /= 1.0f+(colB*strength)*colA;
 	}
 	else if (mode == DECO_SMUDGE)
 	{
-		int rx, ry, num = 0;
-		for (rx=-2; rx<3; rx++)
-			for (ry=-2; ry<3; ry++)
+		float tas = ta, trs = tr, tgs = tg, tbs = tb;
+		int rx, ry;
+		float num = 1.0f;
+		for (rx=-1; rx<2; rx++)
+			for (ry=-1; ry<2; ry++)
 			{
 				if ((pmap[y+ry][x+rx]&0xFF) && parts[pmap[y+ry][x+rx]>>8].dcolour)
 				{
 					Particle part = parts[pmap[y+ry][x+rx]>>8];
 					num++;
-					ta += float((part.dcolour>>24)&0xFF)/255.0f;
-					tr += float((part.dcolour>>16)&0xFF)/255.0f;
-					tg += float((part.dcolour>>8)&0xFF)/255.0f;
-					tb += float((part.dcolour)&0xFF)/255.0f;
+					tas += ((float)((part.dcolour>>24)&0xFF))/255.0f;
+					trs += ((float)((part.dcolour>>16)&0xFF))/255.0f;
+					tgs += ((float)((part.dcolour>>8)&0xFF))/255.0f;
+					tbs += ((float)((part.dcolour)&0xFF))/255.0f;
 				}
 			}
 		if (num == 0)
 			return;
-		ta = ta/float(num+1);
-		tr = tr/float(num+1);
-		tg = tg/float(num+1);
-		tb = tb/float(num+1);
+		ta = ((tas/num)*0.1f) + (ta*0.9f);
+		tr = ((trs/num)*0.1f) + (tr*0.9f);
+		tg = ((tgs/num)*0.1f) + (tg*0.9f);
+		tb = ((tbs/num)*0.1f) + (tb*0.9f);
 	}
 
 	colA_ = ta*255.0f;
@@ -1086,6 +1098,7 @@ int Simulation::ToolBrush(int positionX, int positionY, int tool, Brush * cBrush
 				if(bitmap[(y*sizeX)+x] && (positionX+(x-radiusX) >= 0 && positionY+(y-radiusY) >= 0 && positionX+(x-radiusX) < XRES && positionY+(y-radiusY) < YRES))
 					Tool(positionX+(x-radiusX), positionY+(y-radiusY), tool, strength);
 	}
+	return 0;
 }
 
 void Simulation::ToolLine(int x1, int y1, int x2, int y2, int tool, Brush * cBrush, float strength)
@@ -1653,7 +1666,7 @@ void *Simulation::transform_save(void *odata, int *size, matrix2d transform, vec
 	return ndata;
 }
 
-inline void Simulation::orbitalparts_get(int block1, int block2, int resblock1[], int resblock2[])
+TPT_NO_INLINE void Simulation::orbitalparts_get(int block1, int block2, int resblock1[], int resblock2[])
 {
 	resblock1[0] = (block1&0x000000FF);
 	resblock1[1] = (block1&0x0000FF00)>>8;
@@ -1666,7 +1679,7 @@ inline void Simulation::orbitalparts_get(int block1, int block2, int resblock1[]
 	resblock2[3] = (block2&0xFF000000)>>24;
 }
 
-inline void Simulation::orbitalparts_set(int *block1, int *block2, int resblock1[], int resblock2[])
+TPT_NO_INLINE void Simulation::orbitalparts_set(int *block1, int *block2, int resblock1[], int resblock2[])
 {
 	int block1tmp = 0;
 	int block2tmp = 0;
@@ -3945,11 +3958,7 @@ killed:
 			if (!parts[i].vx&&!parts[i].vy)//if its not moving, skip to next particle, movement code it next
 				continue;
 
-#if defined(WIN) && !defined(__GNUC__)
-			mv = max(fabsf(parts[i].vx), fabsf(parts[i].vy));
-#else
 			mv = fmaxf(fabsf(parts[i].vx), fabsf(parts[i].vy));
-#endif
 			if (mv < ISTP)
 			{
 				clear_x = x;

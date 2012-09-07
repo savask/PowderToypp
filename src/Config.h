@@ -182,17 +182,19 @@ extern unsigned char ZSIZE;
 #ifdef WIN
 #define strcasecmp stricmp
 #endif
-#if defined(WIN) && !defined(__GNUC__)
+#if defined(_MSC_VER)
 #define fmin min
 #define fminf min
 #define fmax max
 #define fmaxf max
 #endif
 
-#if defined(WIN) && !defined(__GNUC__)
+#if defined(_MSC_VER)
 #define TPT_INLINE _inline
+#define TPT_NO_INLINE //Remove inlines in visual studio, but only the ones that don't work
 #else
 #define TPT_INLINE inline
+#define TPT_NO_INLINE inline
 #endif
 
 #define SDEUT

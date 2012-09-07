@@ -61,14 +61,14 @@ public:
 	vector<SaveInfo*> GetSaveList();
 	vector<pair<string, int> > GetTagList();
 	string GetLastError() { return lastError; }
-	int GetPageCount() { return max(1, (int)(ceil(resultCount/16))); }
+	int GetPageCount() { return max(1, (int)(ceil(resultCount/16.0f))); }
 	int GetPageNum() { return currentPage; }
 	std::string GetLastQuery() { return lastQuery; }
 	void SetSort(string sort) { if(!updateSaveListWorking) { currentSort = sort; } notifySortChanged(); }
 	string GetSort() { return currentSort; }
 	void SetShowOwn(bool show) { if(!updateSaveListWorking) { if(show!=showOwn) { showOwn = show; } } notifyShowOwnChanged();  }
 	bool GetShowOwn() { return showOwn; }
-	void SetShowFavourite(bool show) { if(show!=showFavourite) { showFavourite = show; } notifyShowFavouriteChanged();  }
+	void SetShowFavourite(bool show) { if(show!=showFavourite && !updateSaveListWorking) { showFavourite = show; } notifyShowFavouriteChanged();  }
 	bool GetShowFavourite() { return showFavourite; }
 	void SetLoadedSave(SaveInfo * save);
 	SaveInfo * GetLoadedSave();

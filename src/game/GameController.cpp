@@ -113,7 +113,7 @@ public:
 	TagsCallback(GameController * cc_) { cc = cc_; }
 	virtual void ControllerExit()
 	{
-		cc->gameModel->SetSave(new SaveInfo(*(cc->tagsWindow->GetSave())));
+		cc->gameView->NotifySaveChanged(cc->gameModel);
 	}
 };
 
@@ -341,7 +341,7 @@ ui::Point GameController::PointTranslate(ui::Point point)
 	if(point.X >= XRES)
 		point.X = XRES-1;
 	if(point.Y >= YRES)
-		point.Y = YRES+1;
+		point.Y = YRES-1;
 	if(point.Y < 0)
 		point.Y = 0;
 	if(point.X < 0)
@@ -374,7 +374,7 @@ void GameController::DrawRect(int toolSelection, ui::Point point1, ui::Point poi
 	if(!activeTool || !cBrush)
 		return;
 	activeTool->SetStrength(gameModel->GetToolStrength());
-	activeTool->DrawRect(sim, cBrush, PointTranslate(point1), PointTranslate(point2));
+	activeTool->DrawRect(sim, cBrush, point1, point2);
 }
 
 void GameController::DrawLine(int toolSelection, ui::Point point1, ui::Point point2)
@@ -386,7 +386,7 @@ void GameController::DrawLine(int toolSelection, ui::Point point1, ui::Point poi
 	if(!activeTool || !cBrush)
 		return;
 	activeTool->SetStrength(gameModel->GetToolStrength());
-	activeTool->DrawLine(sim, cBrush, PointTranslate(point1), PointTranslate(point2));
+	activeTool->DrawLine(sim, cBrush, point1, point2);
 }
 
 void GameController::DrawFill(int toolSelection, ui::Point point)
@@ -398,7 +398,7 @@ void GameController::DrawFill(int toolSelection, ui::Point point)
 	if(!activeTool || !cBrush)
 		return;
 	activeTool->SetStrength(gameModel->GetToolStrength());
-	activeTool->DrawFill(sim, cBrush, PointTranslate(point));
+	activeTool->DrawFill(sim, cBrush, point);
 }
 
 void GameController::DrawPoints(int toolSelection, queue<ui::Point*> & pointQueue)
@@ -427,7 +427,7 @@ void GameController::DrawPoints(int toolSelection, queue<ui::Point*> & pointQueu
 		bool first = true;
 		while(!pointQueue.empty())
 		{
-			ui::Point fPoint = PointTranslate(*pointQueue.front());
+			ui::Point fPoint = *pointQueue.front();
 			delete pointQueue.front();
 			pointQueue.pop();
 			if(!first)
@@ -480,7 +480,7 @@ void GameController::ToolClick(int toolSelection, ui::Point point)
 	Brush * cBrush = gameModel->GetBrush();
 	if(!activeTool || !cBrush)
 		return;
-	activeTool->Click(sim, cBrush, PointTranslate(point));
+	activeTool->Click(sim, cBrush, point);
 }
 
 void GameController::StampRegion(ui::Point point1, ui::Point point2)
@@ -858,6 +858,7 @@ void GameController::SetActiveColourPreset(int preset)
 void GameController::SetColour(ui::Colour colour)
 {
 	gameModel->SetColourSelectorColour(colour);
+	gameModel->SetPresetColour(colour);
 }
 
 void GameController::SetActiveMenu(Menu * menu)
@@ -972,6 +973,8 @@ void GameController::OpenElementSearch()
 			continue;
 		toolList.insert(toolList.end(), menuToolList.begin(), menuToolList.end());
 	}
+	vector<Tool*> hiddenTools = gameModel->GetUnlistedTools();
+	toolList.insert(toolList.end(), hiddenTools.begin(), hiddenTools.end());
 	new ElementSearchActivity(gameModel, toolList);
 }
 
@@ -1187,6 +1190,14 @@ std::string GameController::ElementResolve(int type)
 {
 	if(gameModel && gameModel->GetSimulation() && gameModel->GetSimulation()->elements && type >= 0 && type < PT_NUM)
 		return std::string(gameModel->GetSimulation()->elements[type].Name);
+	else
+		return "";
+}
+
+std::string GameController::WallName(int type)
+{
+	if(gameModel && gameModel->GetSimulation() && gameModel->GetSimulation()->wtypes && type >= 0)
+		return std::string(gameModel->GetSimulation()->wtypes[type].name);
 	else
 		return "";
 }

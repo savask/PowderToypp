@@ -71,7 +71,7 @@ void * PreviewModel::updateSaveCommentsT()
 
 void PreviewModel::SetFavourite(bool favourite)
 {
-	//if(save)
+	if(save)
 	{
 		Client::Ref().FavouriteSave(save->id, favourite);
 		save->Favourite = favourite;
@@ -159,7 +159,7 @@ int PreviewModel::GetCommentsPageNum()
 
 int PreviewModel::GetCommentsPageCount()
 {
-	return max(1, (int)(ceil(commentsTotal/20)));
+	return max(1, (int)(ceil(commentsTotal/20.0f)));
 }
 
 bool PreviewModel::GetCommentsLoaded()

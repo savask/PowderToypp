@@ -981,8 +981,8 @@ void GameView::OnMouseMove(int x, int y, int dx, int dy)
 	currentMouse = ui::Point(x, y);
 	if(isMouseDown && drawMode == DrawPoints)
 	{
-		pointQueue.push(new ui::Point(x-dx, y-dy));
-		pointQueue.push(new ui::Point(x, y));
+		pointQueue.push(new ui::Point(c->PointTranslate(ui::Point(x-dx, y-dy))));
+		pointQueue.push(new ui::Point(c->PointTranslate(ui::Point(x, y))));
 	}
 }
 
@@ -997,7 +997,7 @@ void GameView::OnMouseDown(int x, int y, unsigned button)
 		}
 		return;
 	}
-	if(currentMouse.X > 0 && currentMouse.X < XRES && currentMouse.Y > 0 && currentMouse.Y < YRES && !(zoomEnabled && !zoomCursorFixed))
+	if(currentMouse.X >= 0 && currentMouse.X < XRES && currentMouse.Y >= 0 && currentMouse.Y < YRES && !(zoomEnabled && !zoomCursorFixed))
 	{
 		if(button == BUTTON_LEFT)
 			toolIndex = 0;
@@ -1014,7 +1014,7 @@ void GameView::OnMouseDown(int x, int y, unsigned button)
 		}
 		if(drawMode == DrawPoints)
 		{
-			pointQueue.push(new ui::Point(x, y));
+			pointQueue.push(new ui::Point(c->PointTranslate(ui::Point(x, y))));
 		}
 	}
 }
@@ -1077,31 +1077,31 @@ void GameView::OnMouseUp(int x, int y, unsigned button)
 			if(drawMode == DrawRect || drawMode == DrawLine)
 			{
 				ui::Point finalDrawPoint2(0, 0);
-				drawPoint2 = ui::Point(x, y);
+				drawPoint2 = c->PointTranslate(ui::Point(x, y));
 				finalDrawPoint2 = drawPoint2;
 
 				if(drawSnap && drawMode == DrawLine)
 				{
-					finalDrawPoint2 = lineSnapCoords(drawPoint1, drawPoint2);
+					finalDrawPoint2 = lineSnapCoords(c->PointTranslate(drawPoint1), drawPoint2);
 				}
 
 				if(drawSnap && drawMode == DrawRect)
 				{
-					finalDrawPoint2 = rectSnapCoords(drawPoint1, drawPoint2);
+					finalDrawPoint2 = rectSnapCoords(c->PointTranslate(drawPoint1), drawPoint2);
 				}
 
 				if(drawMode == DrawRect)
 				{
-					c->DrawRect(toolIndex, drawPoint1, finalDrawPoint2);
+					c->DrawRect(toolIndex, c->PointTranslate(drawPoint1), finalDrawPoint2);
 				}
 				if(drawMode == DrawLine)
 				{
-					c->DrawLine(toolIndex, drawPoint1, finalDrawPoint2);
+					c->DrawLine(toolIndex, c->PointTranslate(drawPoint1), finalDrawPoint2);
 				}
 			}
 			if(drawMode == DrawPoints)
 			{
-				c->ToolClick(toolIndex, ui::Point(x, y));
+				c->ToolClick(toolIndex, c->PointTranslate(ui::Point(x, y)));
 				//pointQueue.push(new ui::Point(x, y));
 			}
 			if(drawModeReset)
@@ -1169,7 +1169,7 @@ void GameView::OnMouseWheel(int x, int y, int d)
 		c->AdjustBrushSize(d, false, shiftBehaviour, ctrlBehaviour);
 		if(isMouseDown)
 		{
-			pointQueue.push(new ui::Point(x, y));
+			pointQueue.push(new ui::Point(c->PointTranslate(ui::Point(x, y))));
 		}
 	}
 }
@@ -1177,6 +1177,8 @@ void GameView::OnMouseWheel(int x, int y, int d)
 void GameView::ToggleDebug()
 {
 	showDebug = !showDebug;
+	if (ren)
+		ren->debugLines = showDebug;
 }
 
 void GameView::BeginStampSelection()
@@ -1453,7 +1455,7 @@ void GameView::OnTick(float dt)
 	{
 		if(isMouseDown)
 		{
-			pointQueue.push(new ui::Point(currentMouse));
+			pointQueue.push(new ui::Point(c->PointTranslate(currentMouse)));
 		}
 		if(!pointQueue.empty())
 		{
@@ -1462,11 +1464,11 @@ void GameView::OnTick(float dt)
 	}
 	if(drawMode == DrawFill && isMouseDown)
 	{
-		c->DrawFill(toolIndex, currentMouse);
+		c->DrawFill(toolIndex, c->PointTranslate(currentMouse));
 	}
 	if(introText)
 	{
-		introText -= int(dt)>0?std::min(int(dt), 5):1;
+		introText -= int(dt)>0?((int)dt < 5? dt:5):1;
 		if(introText < 0)
 			introText  = 0;
 	}
@@ -1618,6 +1620,8 @@ void GameView::NotifyNotificationsChanged(GameModel * sender)
 		tempButton->SetActionCallback(new NotificationButtonAction(this, *iter));
 		tempButton->Appearance.BorderInactive = style::Colour::WarningTitle;
 		tempButton->Appearance.TextInactive = style::Colour::WarningTitle;
+		tempButton->Appearance.BorderHover = ui::Colour(255, 175, 0);
+		tempButton->Appearance.TextHover = ui::Colour(255, 175, 0);
 		AddComponent(tempButton);
 		notificationComponents.push_back(tempButton);
 
@@ -1628,6 +1632,8 @@ void GameView::NotifyNotificationsChanged(GameModel * sender)
 		tempButton->Appearance.Margin.Top+=2;
 		tempButton->Appearance.BorderInactive = style::Colour::WarningTitle;
 		tempButton->Appearance.TextInactive = style::Colour::WarningTitle;
+		tempButton->Appearance.BorderHover = ui::Colour(255, 175, 0);
+		tempButton->Appearance.TextHover = ui::Colour(255, 175, 0);
 		AddComponent(tempButton);
 		notificationComponents.push_back(tempButton);
 
@@ -1755,7 +1761,7 @@ void GameView::OnDraw()
 	{
 		ren->clearScreen(1.0f);
 		ren->RenderBegin();
-		if(selectMode == SelectNone && (!zoomEnabled || zoomCursorFixed) && activeBrush && currentMouse.X > 0 && currentMouse.X < XRES && currentMouse.Y > 0 && currentMouse.Y < YRES)
+		if(selectMode == SelectNone && (!zoomEnabled || zoomCursorFixed) && activeBrush && currentMouse.X >= 0 && currentMouse.X < XRES && currentMouse.Y >= 0 && currentMouse.Y < YRES)
 		{
 			ui::Point finalCurrentMouse = c->PointTranslate(currentMouse);
 			ui::Point initialDrawPoint = drawPoint1;
@@ -1924,18 +1930,18 @@ void GameView::OnDraw()
 		std::stringstream sampleInfo;
 		sampleInfo.precision(2);
 		if(sample.particle.type)
-		{	
+		{
 			if(showDebug)
 			{
 				sampleInfo << c->ElementResolve(sample.particle.type);
 				if(sample.particle.ctype > 0 && sample.particle.ctype < PT_NUM)
 					sampleInfo << " (" << c->ElementResolve(sample.particle.ctype) << ")";
 				else
-					sampleInfo << " ()";	
-				sampleInfo << ", Pressure: " << std::fixed << sample.AirPressure;
+					sampleInfo << " ()";
 				sampleInfo << ", Temp: " << std::fixed << sample.particle.temp -273.15f;
 				sampleInfo << ", Life: " << sample.particle.life;
 				sampleInfo << ", Tmp: " << sample.particle.tmp;
+				sampleInfo << ", Pressure: " << std::fixed << sample.AirPressure;
 			}
 			else
 			{
@@ -1943,11 +1949,16 @@ void GameView::OnDraw()
 					sampleInfo << "Molten " << c->ElementResolve(sample.particle.ctype);
 				else
 					sampleInfo << c->ElementResolve(sample.particle.type);
-				sampleInfo << ", Pressure: " << std::fixed << sample.AirPressure;
 				sampleInfo << ", Temp: " << std::fixed << sample.particle.temp -273.15f;
+				sampleInfo << ", Pressure: " << std::fixed << sample.AirPressure;
 			}
 			if(sample.particle.type == PT_PHOT)
 				wavelengthGfx = sample.particle.ctype;
+		}
+		else if (sample.WallType)
+		{
+			sampleInfo << c->WallName(sample.WallType);
+			sampleInfo << ", Pressure: " << std::fixed << sample.AirPressure;
 		}
 		else
 		{
@@ -2004,6 +2015,8 @@ void GameView::OnDraw()
 				sampleInfo << "#" << sample.ParticleID << ", ";
 			}
 			sampleInfo << "X:" << sample.PositionX << " Y:" << sample.PositionY;
+			if (std::abs(sample.Gravity) > 0.1f)
+				sampleInfo << " GX: " << sample.GravityVelocityX << " GY: " << sample.GravityVelocityY;
 
 			textWidth = Graphics::textwidth((char*)sampleInfo.str().c_str());
 			g->fillrect(XRES-20-textWidth, 26, textWidth+8, 15, 0, 0, 0, 255*0.5);
@@ -2056,7 +2069,7 @@ void GameView::OnDraw()
 ui::Point GameView::lineSnapCoords(ui::Point point1, ui::Point point2)
 {
 	ui::Point newPoint(0, 0);
-	float snapAngle = floor(atan2(point2.Y-point1.Y, point2.X-point1.X)/(M_PI*0.25)+0.5)*M_PI*0.25;
+	float snapAngle = floor(atan2((float)point2.Y-point1.Y, point2.X-point1.X)/(M_PI*0.25)+0.5)*M_PI*0.25;
 	float lineMag = sqrtf(pow((float)(point2.X-point1.X),2)+pow((float)(point2.Y-point1.Y),2));
 	newPoint.X = (int)(lineMag*cos(snapAngle)+point1.X+0.5f);
 	newPoint.Y = (int)(lineMag*sin(snapAngle)+point1.Y+0.5f);
@@ -2066,7 +2079,7 @@ ui::Point GameView::lineSnapCoords(ui::Point point1, ui::Point point2)
 ui::Point GameView::rectSnapCoords(ui::Point point1, ui::Point point2)
 {
 	ui::Point newPoint(0, 0);
-	float snapAngle = floor((atan2(point2.Y-point1.Y, point2.X-point1.X)+M_PI*0.25)/(M_PI*0.5)+0.5)*M_PI*0.5 - M_PI*0.25;
+	float snapAngle = floor((atan2((float)point2.Y-point1.Y, point2.X-point1.X)+M_PI*0.25)/(M_PI*0.5)+0.5)*M_PI*0.5 - M_PI*0.25;
 	float lineMag = sqrtf(pow((float)(point2.X-point1.X),2)+pow((float)(point2.Y-point1.Y),2));
 	newPoint.X = (int)(lineMag*cos(snapAngle)+point1.X+0.5f);
 	newPoint.Y = (int)(lineMag*sin(snapAngle)+point1.Y+0.5f);

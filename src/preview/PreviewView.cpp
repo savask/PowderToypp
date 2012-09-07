@@ -60,23 +60,6 @@ PreviewView::PreviewView():
 	submitCommentButton(NULL),
 	commentBoxHeight(20)
 {
-	class OpenAction: public ui::ButtonAction
-	{
-		PreviewView * v;
-	public:
-		OpenAction(PreviewView * v_){ v = v_; }
-		virtual void ActionCallback(ui::Button * sender)
-		{
-			v->c->DoOpen();
-		}
-	};
-	openButton = new ui::Button(ui::Point(0, Size.Y-19), ui::Point(51, 19), "Open");
-	openButton->Appearance.HorizontalAlign = ui::Appearance::AlignLeft;	openButton->Appearance.VerticalAlign = ui::Appearance::AlignMiddle;
-	openButton->SetIcon(IconOpen);
-	openButton->SetActionCallback(new OpenAction(this));
-	AddComponent(openButton);
-	SetOkayButton(openButton);
-
 	class FavAction: public ui::ButtonAction
 	{
 		PreviewView * v;
@@ -88,7 +71,7 @@ PreviewView::PreviewView():
 		}
 	};
 
-	favButton = new ui::Button(ui::Point(50, Size.Y-19), ui::Point(51, 19), "Fav.");
+	favButton = new ui::Button(ui::Point(50, Size.Y-19), ui::Point(51, 19), "Fav");
 	favButton->Appearance.HorizontalAlign = ui::Appearance::AlignLeft;	favButton->Appearance.VerticalAlign = ui::Appearance::AlignMiddle;
 	favButton->SetIcon(IconFavourite);
 	favButton->SetActionCallback(new FavAction(this));
@@ -122,6 +105,23 @@ PreviewView::PreviewView():
 	reportButton->SetActionCallback(new ReportAction(this));
 	reportButton->Enabled = Client::Ref().GetAuthUser().ID?true:false;
 	AddComponent(reportButton);
+
+	class OpenAction: public ui::ButtonAction
+	{
+		PreviewView * v;
+	public:
+		OpenAction(PreviewView * v_){ v = v_; }
+		virtual void ActionCallback(ui::Button * sender)
+		{
+			v->c->DoOpen();
+		}
+	};
+	openButton = new ui::Button(ui::Point(0, Size.Y-19), ui::Point(51, 19), "Open");
+	openButton->Appearance.HorizontalAlign = ui::Appearance::AlignLeft;	openButton->Appearance.VerticalAlign = ui::Appearance::AlignMiddle;
+	openButton->SetIcon(IconOpen);
+	openButton->SetActionCallback(new OpenAction(this));
+	AddComponent(openButton);
+	SetOkayButton(openButton);
 
 	class BrowserOpenAction: public ui::ButtonAction
 	{
@@ -380,9 +380,20 @@ void PreviewView::NotifySaveChanged(PreviewModel * sender)
 		viewsLabel->SetText("\bgViews:\bw " + format::NumberToString<int>(save->Views));
 		saveDescriptionLabel->SetText(save->Description);
 		if(save->Favourite)
-			favButton->Enabled = false;
-		else if(Client::Ref().GetAuthUser().ID)
+		{
 			favButton->Enabled = true;
+			favButton->SetText("Unfav");
+		}
+		else if(Client::Ref().GetAuthUser().ID)
+		{
+			favButton->Enabled = true;
+			favButton->SetText("Fav");
+		}
+		else
+		{
+			favButton->SetText("Fav");
+			favButton->Enabled = false;
+		}
 
 		if(save->GetGameSave())
 		{

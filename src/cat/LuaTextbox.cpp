@@ -79,6 +79,7 @@ int LuaTextbox::onTextChanged(lua_State * l)
 	{
 		onTextChangedFunction = 0;
 	}
+	return 0;
 }
 
 void LuaTextbox::triggerOnTextChanged()

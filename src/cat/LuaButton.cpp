@@ -77,6 +77,7 @@ int LuaButton::action(lua_State * l)
 	{
 		actionFunction = 0;
 	}
+	return 0;
 }
 
 int LuaButton::text(lua_State * l)
